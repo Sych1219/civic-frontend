@@ -8,11 +8,15 @@ import type { TaxiDataResponse, VisualizationMode } from '@/types/taxi';
 interface TaxiHeatmapMapProps {
   mapboxToken: string;
   refreshInterval?: number; // in milliseconds, default 30000
+  externalData?: TaxiDataResponse | null; // Allow external data injection
+  autoRefresh?: boolean; // Control automatic refresh, default true
 }
 
 export default function TaxiHeatmapMap({ 
   mapboxToken, 
-  refreshInterval = 30000 
+  refreshInterval = 30000,
+  externalData = null,
+  autoRefresh = true
 }: TaxiHeatmapMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -296,10 +300,12 @@ export default function TaxiHeatmapMap({
       map.current.addControl(new mapboxgl.NavigationControl(), 'top-left');
     });
 
-    // Setup refresh interval
-    refreshIntervalRef.current = setInterval(() => {
-      fetchTaxiData();
-    }, refreshInterval);
+    // Setup refresh interval only if autoRefresh is enabled
+    if (autoRefresh) {
+      refreshIntervalRef.current = setInterval(() => {
+        fetchTaxiData();
+      }, refreshInterval);
+    }
 
     return () => {
       if (refreshIntervalRef.current) {
@@ -310,7 +316,18 @@ export default function TaxiHeatmapMap({
         map.current = null;
       }
     };
-  }, [mapboxToken, refreshInterval, fetchTaxiData, updateVisualizationMode]);
+  }, [mapboxToken, refreshInterval, fetchTaxiData, updateVisualizationMode, autoRefresh]);
+
+  // Handle external data updates
+  useEffect(() => {
+    if (externalData && map.current && map.current.getSource('taxis')) {
+      const transformedData = transformTaxiData(externalData);
+      const source = map.current.getSource('taxis') as mapboxgl.GeoJSONSource;
+      source.setData(transformedData);
+      setLastUpdated(new Date());
+      setError(null);
+    }
+  }, [externalData, transformTaxiData]);
 
   const getModeLabel = (mode: VisualizationMode['mode']) => {
     switch (mode) {
