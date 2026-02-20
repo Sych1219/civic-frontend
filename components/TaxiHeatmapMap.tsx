@@ -7,16 +7,12 @@ import type { TaxiDataResponse, VisualizationMode } from '@/types/taxi';
 
 interface TaxiHeatmapMapProps {
   mapboxToken: string;
-  refreshInterval?: number; // in milliseconds, default 30000
   externalData?: TaxiDataResponse | null; // Allow external data injection
-  autoRefresh?: boolean; // Control automatic refresh, default true
 }
 
 export default function TaxiHeatmapMap({ 
   mapboxToken, 
-  refreshInterval = 30000,
   externalData = null,
-  autoRefresh = true
 }: TaxiHeatmapMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -27,7 +23,6 @@ export default function TaxiHeatmapMap({
     mode: 'heatmap',
     zoom: 11
   });
-  const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Convert MultiPoint to individual Point features for clustering
   const transformTaxiData = useCallback((data: TaxiDataResponse): GeoJSON.FeatureCollection => {
@@ -51,33 +46,6 @@ export default function TaxiHeatmapMap({
       features: pointFeatures
     };
   }, []);
-
-  // Fetch taxi data
-  const fetchTaxiData = useCallback(async () => {
-    try {
-      const response = await fetch('/taxi.json');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data: TaxiDataResponse = await response.json();
-      const transformedData = transformTaxiData(data);
-      
-      // Update source data if map is initialized
-      if (map.current && map.current.getSource('taxis')) {
-        const source = map.current.getSource('taxis') as mapboxgl.GeoJSONSource;
-        source.setData(transformedData);
-        setLastUpdated(new Date());
-        setError(null);
-      }
-      
-      return transformedData;
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch taxi data';
-      console.warn('Error fetching taxi data:', errorMessage);
-      setError(errorMessage);
-      return null;
-    }
-  }, [transformTaxiData]);
 
   // Update visualization mode based on zoom
   const updateVisualizationMode = useCallback((zoom: number) => {
@@ -108,20 +76,19 @@ export default function TaxiHeatmapMap({
       pitch: 0
     });
 
-    map.current.on('load', async () => {
+    map.current.on('load', () => {
       if (!map.current) return;
 
-      // Fetch initial data
-      const initialData = await fetchTaxiData();
-      if (!initialData) {
-        setLoading(false);
-        return;
-      }
+      // Start with empty data — populated when user queries via chatbot
+      const emptyData: GeoJSON.FeatureCollection = {
+        type: 'FeatureCollection',
+        features: []
+      };
 
       // Add source with clustering
       map.current.addSource('taxis', {
         type: 'geojson',
-        data: initialData,
+        data: emptyData,
         cluster: true,
         clusterMaxZoom: 14,
         clusterRadius: 50
@@ -293,30 +260,19 @@ export default function TaxiHeatmapMap({
 
       // Set initial visualization mode
       updateVisualizationMode(map.current.getZoom());
-      setLastUpdated(new Date());
       setLoading(false);
 
       // Add navigation controls
       map.current.addControl(new mapboxgl.NavigationControl(), 'top-left');
     });
 
-    // Setup refresh interval only if autoRefresh is enabled
-    if (autoRefresh) {
-      refreshIntervalRef.current = setInterval(() => {
-        fetchTaxiData();
-      }, refreshInterval);
-    }
-
     return () => {
-      if (refreshIntervalRef.current) {
-        clearInterval(refreshIntervalRef.current);
-      }
       if (map.current) {
         map.current.remove();
         map.current = null;
       }
     };
-  }, [mapboxToken, refreshInterval, fetchTaxiData, updateVisualizationMode, autoRefresh]);
+  }, [mapboxToken, updateVisualizationMode]);
 
   // Handle external data updates
   useEffect(() => {

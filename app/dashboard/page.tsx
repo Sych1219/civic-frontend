@@ -52,7 +52,6 @@ export default function DashboardPage() {
         <TaxiHeatmapMap 
           mapboxToken={mapboxToken}
           externalData={taxiData}
-          autoRefresh={false} // Disable auto-refresh since we're getting data from chat
         />
         
         {/* Floating info badge */}
