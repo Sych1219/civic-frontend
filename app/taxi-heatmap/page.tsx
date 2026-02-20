@@ -42,7 +42,6 @@ export default function TaxiHeatmapPage() {
     <main className="w-screen h-screen">
       <TaxiHeatmapMap 
         mapboxToken={mapboxToken}
-        refreshInterval={30000} // Refresh every 30 seconds
       />
     </main>
   );
