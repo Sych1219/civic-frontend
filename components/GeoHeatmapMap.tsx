@@ -19,6 +19,7 @@ export default function GeoHeatmapMap({
 }: GeoHeatmapMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
+  const pendingData = useRef<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -27,9 +28,51 @@ export default function GeoHeatmapMap({
     zoom: 11
   });
 
-  // Extract the GeoJSON FeatureCollection directly from an ApiResponse
+  /**
+   * Expand a MapData GeoJSON into individual Point features suitable for
+   * Mapbox heatmap / cluster / unclustered layers.
+   *
+   * The backend may return a single MultiPoint feature whose properties
+   * are parallel arrays (one entry per station).  We unpack those arrays
+   * so every Point gets its own scalar properties plus the latest `value`
+   * from the temporal series.
+   */
   const getMapGeoJson = useCallback((data: ApiResponse): GeoJSON.FeatureCollection => {
-    return (data.data as MapData).geojson;
+    const fc = (data.data as MapData).geojson;
+    const points: GeoJSON.Feature<GeoJSON.Point>[] = [];
+
+    for (const feature of fc.features) {
+      if (feature.geometry.type === 'Point') {
+        points.push(feature as GeoJSON.Feature<GeoJSON.Point>);
+        continue;
+      }
+
+      if (feature.geometry.type === 'MultiPoint') {
+        const coords = (feature.geometry as GeoJSON.MultiPoint).coordinates;
+        const staticProps = (feature.properties?.static ?? {}) as Record<string, unknown[]>;
+        // Use the most-recent reading as the per-point heatmap weight
+        const latestValue =
+          (feature.properties?.temporal?.series as { value: number }[] | undefined)?.[0]
+            ?.value ?? null;
+
+        coords.forEach((coord, i) => {
+          // Flatten parallel arrays: e.g. staticProps.name[i] → name
+          const perPoint: Record<string, unknown> = {};
+          for (const [key, arr] of Object.entries(staticProps)) {
+            perPoint[key] = Array.isArray(arr) ? arr[i] : arr;
+          }
+          if (latestValue !== null) perPoint['value'] = latestValue;
+
+          points.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: coord },
+            properties: perPoint,
+          });
+        });
+      }
+    }
+
+    return { type: 'FeatureCollection', features: points };
   }, []);
 
   // Update visualization mode based on zoom
@@ -86,13 +129,19 @@ export default function GeoHeatmapMap({
         source: 'geodata',
         maxzoom: 12,
         paint: {
-          // Increase weight for higher density
+          // Weight by numeric 'value' property (e.g. temperature);
+          // falls back to 1 when the property is absent (density-only mode)
           'heatmap-weight': [
-            'interpolate',
-            ['linear'],
-            ['get', 'point_count'],
-            0, 0,
-            6, 1
+            'case',
+            ['has', 'value'],
+            [
+              'interpolate',
+              ['linear'],
+              ['get', 'value'],
+              0, 0,
+              50, 1
+            ],
+            1
           ],
           // Increase intensity as zoom level increases
           'heatmap-intensity': [
@@ -114,13 +163,13 @@ export default function GeoHeatmapMap({
             0.8, 'rgb(239,138,98)',
             1, 'rgb(178,24,43)'
           ],
-          // Adjust radius by zoom level
+          // Adjust radius — wider radii ensure sparse sensor stations are visible
           'heatmap-radius': [
             'interpolate',
             ['linear'],
             ['zoom'],
-            0, 2,
-            12, 20
+            0, 8,
+            12, 50
           ],
           // Transition from heatmap to circle layer
           'heatmap-opacity': [
@@ -205,13 +254,19 @@ export default function GeoHeatmapMap({
         if (!e.features || e.features.length === 0) return;
 
         const coordinates = (e.features[0].geometry as GeoJSON.Point).coordinates.slice() as [number, number];
-        const properties = e.features[0].properties || {};
+        const props = e.features[0].properties || {};
 
         while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
           coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
         }
 
-        const propRows = Object.entries(properties)
+        // Promoted fields shown at the top; everything else in the table
+        const name = props['name'] ?? props['id'] ?? null;
+        const value = props['value'] != null ? Number(props['value']).toFixed(1) : null;
+
+        const skipKeys = new Set(['name', 'id', 'value']);
+        const otherRows = Object.entries(props)
+          .filter(([k]) => !skipKeys.has(k))
           .map(
             ([k, v]) =>
               `<tr><td style="padding:2px 8px 2px 0;font-size:11px;color:#666;">${k}</td>` +
@@ -223,8 +278,9 @@ export default function GeoHeatmapMap({
           .setLngLat(coordinates)
           .setHTML(
             `<div style="padding:8px;max-width:240px;">
-              <h3 style="margin:0 0 8px 0;font-weight:bold;font-size:13px;">Station Details</h3>
-              <table style="border-collapse:collapse;">${propRows || '<tr><td style="font-size:11px;color:#999;">No properties</td></tr>'}</table>
+              ${name ? `<h3 style="margin:0 0 6px 0;font-weight:bold;font-size:13px;">${name}</h3>` : ''}
+              ${value != null ? `<p style="margin:0 0 8px 0;font-size:14px;color:#e05c2a;font-weight:600;">${value} <span style="font-size:11px;color:#888;font-weight:normal;">${props['unit'] ?? '°C'}</span></p>` : ''}
+              ${otherRows ? `<table style="border-collapse:collapse;">${otherRows}</table>` : ''}
               <p style="margin:6px 0 0;font-size:10px;color:#999;">Lat: ${coordinates[1].toFixed(5)}, Lng: ${coordinates[0].toFixed(5)}</p>
             </div>`
           )
@@ -253,6 +309,16 @@ export default function GeoHeatmapMap({
 
       // Add navigation controls
       map.current.addControl(new mapboxgl.NavigationControl(), 'top-left');
+
+      // Apply data that arrived before the map finished loading
+      if (pendingData.current) {
+        const geoJson = getMapGeoJson(pendingData.current);
+        (map.current.getSource('geodata') as mapboxgl.GeoJSONSource).setData(geoJson);
+        const center = (pendingData.current.data as MapData).center;
+        if (center) map.current.flyTo({ center: [center.lon, center.lat], essential: true });
+        setLastUpdated(new Date());
+        pendingData.current = null;
+      }
     });
 
     return () => {
@@ -265,23 +331,29 @@ export default function GeoHeatmapMap({
 
   // Handle external data updates
   useEffect(() => {
-    if (externalData && map.current && map.current.getSource('geodata')) {
-      const geoJson = getMapGeoJson(externalData);
-      const source = map.current.getSource('geodata') as mapboxgl.GeoJSONSource;
-      source.setData(geoJson);
+    if (!externalData) return;
 
-      // Fly to the data centre if provided
-      const mapData = externalData.data as MapData;
-      if (mapData.center) {
-        map.current.flyTo({
-          center: [mapData.center.lon, mapData.center.lat],
-          essential: true,
-        });
-      }
-
-      setLastUpdated(new Date());
-      setError(null);
+    // Map not loaded yet — store and apply once the 'load' event fires
+    if (!map.current || !map.current.getSource('geodata')) {
+      pendingData.current = externalData;
+      return;
     }
+
+    const geoJson = getMapGeoJson(externalData);
+    const source = map.current.getSource('geodata') as mapboxgl.GeoJSONSource;
+    source.setData(geoJson);
+
+    // Fly to the data centre if provided
+    const mapData = externalData.data as MapData;
+    if (mapData.center) {
+      map.current.flyTo({
+        center: [mapData.center.lon, mapData.center.lat],
+        essential: true,
+      });
+    }
+
+    setLastUpdated(new Date());
+    setError(null);
   }, [externalData, getMapGeoJson]);
 
   const getModeLabel = (mode: VisualizationMode['mode']) => {

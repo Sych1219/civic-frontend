@@ -64,7 +64,7 @@ Process a natural-language query and return structured, visualisation-ready data
 | `data.chart_configs[].x_label` | string | Display label for the x-axis |
 | `data.chart_configs[].y_label` | string | Display label for the y-axis |
 | `data.columns` | array | Ordered list of keys present in each record |
-| `visualization_type` | string | Instructs the frontend which component to render (`"time_series"`) |
+| `visualization_type` | `str` | One of: `map`, `map_temporal`, `time_series`, `generic` |
 | `error` | null | `null` on success |
 
 **Response — success (map / GeoJSON)**
@@ -103,7 +103,7 @@ Process a natural-language query and return structured, visualisation-ready data
 | `data.temporal.series[].value` | number | Numeric reading at this timestamp |
 | `data.temporal.series[].attribute` | string | Raw attribute name from the source dataset |
 | `data.temporal.unit` | string | Physical unit of the `value` field (e.g. `"deg C"`) |
-| `visualization_type` | string | Instructs the frontend which component to render (`"map_temporal"`, `"map_static"`, etc.) |
+| `visualization_type` | `str` | One of: `map`, `map_temporal`, `time_series`, `generic` |
 | `error` | null | `null` on success |
 
 **Response — error**
@@ -121,7 +121,7 @@ Process a natural-language query and return structured, visualisation-ready data
 |---|---|---|
 | `status` | string | `"error"` |
 | `data` | object | Always an empty object on error |
-| `visualization_type` | string | `"error"` — signals the frontend to render an error state |
+| `visualization_type` | `str` | `"error"` — signals the frontend to render an error state; one of: `map`, `map_temporal`, `time_series`, `generic`, `error` |
 | `error` | string | Human-readable error message describing what went wrong |
 
 ---

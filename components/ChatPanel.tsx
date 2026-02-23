@@ -1,19 +1,19 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { SendHorizontal, Loader2, MapPin } from 'lucide-react';
-import type { TaxiDataResponse } from '@/types/taxi';
+import { SendHorizontal, Loader2, BarChart2 } from 'lucide-react';
+import type { ApiResponse, MapData, TimeSeriesData } from '@/types/api';
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  data?: TaxiDataResponse;
+  data?: ApiResponse;
 }
 
 interface ChatPanelProps {
-  onDataReceived: (data: TaxiDataResponse) => void;
+  onDataReceived: (data: ApiResponse) => void;
   backendUrl?: string;
 }
 
@@ -25,7 +25,7 @@ export default function ChatPanel({
     {
       id: '1',
       role: 'assistant',
-      content: 'Hello! I can help you check taxi availability in Singapore. Try asking "What\'s the current taxi status?" or "Show me available taxis".',
+      content: 'Hello! I can help you explore urban and environmental data for Singapore. Try asking about air temperature, taxi availability, or PM2.5 readings.',
       timestamp: new Date()
     }
   ]);
@@ -74,7 +74,7 @@ export default function ChatPanel({
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data: TaxiDataResponse = await response.json();
+      const data: ApiResponse = await response.json();
 
       // Create assistant message
       const assistantMessage: Message = {
@@ -87,10 +87,8 @@ export default function ChatPanel({
 
       setMessages(prev => [...prev, assistantMessage]);
 
-      // Send data to map
-      if (data.status === 'success') {
-        onDataReceived(data);
-      }
+      // Forward to visualisation panel for all non-error responses
+      onDataReceived(data);
 
     } catch (error) {
       console.error('Error querying backend:', error);
@@ -108,15 +106,39 @@ export default function ChatPanel({
     }
   };
 
-  const generateResponseMessage = (data: TaxiDataResponse): string => {
-    if (data.status !== 'success') {
-      return 'Unable to retrieve taxi data at the moment.';
+  const generateResponseMessage = (data: ApiResponse): string => {
+    if (data.status !== 'success' || data.visualization_type === 'error') {
+      return data.error || 'Something went wrong. Please try again.';
     }
 
-    const taxiCount = data.data.geojson.features[0]?.properties?.taxi_count || 0;
-    const timestamp = data.data.geojson.features[0]?.properties?.timestamp;
-    
-    return `Found ${taxiCount.toLocaleString()} available taxis in Singapore. ${timestamp ? `Data updated at ${new Date(timestamp).toLocaleTimeString()}.` : ''} The map has been updated to show their locations.`;
+    switch (data.visualization_type) {
+      case 'map':
+      case 'map_temporal': {
+        const mapData = data.data as MapData;
+        const temporal = mapData.temporal;
+        return [
+          `Showing ${mapData.features_count} station${mapData.features_count !== 1 ? 's' : ''} on the map.`,
+          temporal
+            ? ` ${temporal.series.length} time-point${temporal.series.length !== 1 ? 's' : ''} available (${temporal.unit}).`
+            : '',
+        ].join('');
+      }
+      case 'time_series':
+      case 'generic': {
+        const tsData = data.data as TimeSeriesData;
+        const title = tsData.chart_configs?.[0]?.title ?? 'Chart';
+        const count = tsData.records?.length ?? 0;
+        const stats = tsData.summary_stats?.value;
+        return [
+          `${title}: ${count} data point${count !== 1 ? 's' : ''}.`,
+          stats
+            ? ` Mean: ${stats.mean.toFixed(1)}, Range: ${stats.min.toFixed(1)} – ${stats.max.toFixed(1)}.`
+            : '',
+        ].join('');
+      }
+      default:
+        return 'Visualisation updated.';
+    }
   };
 
   return (
@@ -125,11 +147,11 @@ export default function ChatPanel({
       <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-slate-200 shadow-sm">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-blue-500 rounded-lg">
-            <MapPin className="w-5 h-5 text-white" />
+            <BarChart2 className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Taxi Assistant</h2>
-            <p className="text-sm text-slate-500">Ask about taxi availability</p>
+            <h2 className="text-lg font-semibold text-slate-900">Civic Assistant</h2>
+            <p className="text-sm text-slate-500">Ask about urban & environmental data</p>
           </div>
         </div>
       </div>
@@ -158,12 +180,15 @@ export default function ChatPanel({
               </p>
               {message.data && message.data.status === 'success' && (
                 <div className="mt-2 pt-2 border-t border-slate-200">
-                  <div className="flex items-center space-x-2 text-xs text-slate-600">
-                    <MapPin className="w-3 h-3" />
-                    <span>
-                      {message.data.data.geojson.features[0]?.properties?.taxi_count || 0} taxis
-                    </span>
-                  </div>
+                  <span className="text-xs text-slate-500">
+                    {(message.data.visualization_type === 'map' ||
+                      message.data.visualization_type === 'map_temporal')
+                      ? `${(message.data.data as MapData).features_count} features on map`
+                      : (message.data.visualization_type === 'time_series' ||
+                          message.data.visualization_type === 'generic')
+                        ? `${(message.data.data as TimeSeriesData).records?.length ?? 0} records`
+                        : null}
+                  </span>
                 </div>
               )}
             </div>
@@ -191,7 +216,7 @@ export default function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about taxi availability..."
+            placeholder="Ask about urban & environmental data…"
             disabled={isLoading}
             className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
@@ -211,24 +236,19 @@ export default function ChatPanel({
         {/* Quick suggestions */}
         {messages.length === 1 && (
           <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              onClick={() => setInput("What's the current taxi status?")}
-              className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-            >
-              Current status
-            </button>
-            <button
-              onClick={() => setInput("Show me available taxis")}
-              className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-            >
-              Show taxis
-            </button>
-            <button
-              onClick={() => setInput("How many taxis are available?")}
-              className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-            >
-              Taxi count
-            </button>
+            {[
+              'Show me air temperature for today',
+              "What's the current taxi availability?",
+              'Show me PM2.5 readings across Singapore',
+            ].map((suggestion) => (
+              <button
+                key={suggestion}
+                onClick={() => setInput(suggestion)}
+                className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+              >
+                {suggestion}
+              </button>
+            ))}
           </div>
         )}
       </div>

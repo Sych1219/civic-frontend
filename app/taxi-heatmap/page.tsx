@@ -1,4 +1,4 @@
-import TaxiHeatmapMap from '@/components/TaxiHeatmapMap';
+import GeoHeatmapMap from '@/components/GeoHeatmapMap';
 
 export default function TaxiHeatmapPage() {
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
@@ -40,7 +40,7 @@ export default function TaxiHeatmapPage() {
 
   return (
     <main className="w-screen h-screen">
-      <TaxiHeatmapMap 
+      <GeoHeatmapMap 
         mapboxToken={mapboxToken}
       />
     </main>
