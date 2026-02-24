@@ -61,6 +61,10 @@ export interface ApiResponse {
   data: MapData | TimeSeriesData | Record<string, never>;
   visualization_type: VisualizationType;
   error: string | null;
+  /** Stable machine identifier for the layer, e.g. "temperature", "taxi", "pm25" */
+  layer_id?: string;
+  /** Human-readable name shown in the LayerToggle panel, e.g. "Air Temperature" */
+  layer_label?: string;
 }
 
 // ── Map visualisation modes (used by GeoHeatmapMap) ─────────────────────────
