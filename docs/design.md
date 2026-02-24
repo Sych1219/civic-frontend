@@ -16,8 +16,8 @@ The dashboard is a split-panel layout: a **chat interface** on the left and a **
 │  │  ChatPanel   │  │                                    ││
 │  │              │  │  map / map_temporal →              ││
 │  │  - Messages  │  │    GeoHeatmapMap                   ││
-│  │  - Input     │  │    (Heatmap / Cluster / Points)    ││
-│  │  - API call  │  │                                    ││
+│  │  - Input     │  │    (Heatmap / Cluster / Points /   ││
+│  │  - API call  │  │     Temporal + Time Slider)        ││
 │  │              │  │  time_series / generic →           ││
 │  │              │  │    Chart (Line / Bar / Scatter …)  ││
 │  │              │  │                                    ││
@@ -45,13 +45,47 @@ The dashboard is a split-panel layout: a **chat interface** on the left and a **
 
 `visualization_type`: `map` | `map_temporal`
 
-The map automatically switches layers based on zoom level:
+#### `map` — static GeoJSON
+
+Automatically switches layers based on zoom level:
 
 | Zoom Level | Mode | Description |
 |---|---|---|
 | **< 12** | 🔥 Heatmap | Colour-coded density map (blue → red) |
 | **12 – 14** | 🔵 Clusters | Grouped markers with counts (blue < 100, yellow < 750, pink 750+) |
 | **≥ 15** | 📍 Points | Individual data points — click for details |
+
+#### `map_temporal` — time-series point map
+
+Displays individual sensor stations as coloured circles whose colours update continuously as the user scrubs through time. The heatmap/cluster layers are hidden and replaced by three dedicated Mapbox layers:
+
+| Layer ID | Type | Purpose |
+|---|---|---|
+| `temporal-glow` | `circle` | Blurred outer halo (25 % opacity) for a glow effect |
+| `temporal-points` | `circle` | Main filled circle, colour-mapped to the current value |
+| `temporal-labels` | `symbol` | Rounded value + unit label floating above each point |
+
+Colour ramp is dynamically calibrated to the actual `[min, max]` of the dataset:
+
+```
+blue (#2166ac) → light blue (#67a9cf) → white (#f7f7f7) → orange (#ef8a62) → red (#b2182b)
+```
+
+**Time slider panel** (rendered below the map when `visualization_type === 'map_temporal'`):
+
+| Element | Description |
+|---|---|
+| ▶ / ⏸ button | Starts/pauses animation; resets to beginning if already at the end |
+| Timestamp display | Shows the current ISO timestamp formatted as `HH:MM:SS` |
+| Colour ramp legend | Gradient bar with `min` / `max` value labels |
+| `<input type="range">` | Scrub slider — `step=0.05` for sub-frame precision; dragging pauses playback |
+| Start / end labels | First and last timestamps in `HH:MM` format |
+
+**Smooth transitions** are achieved by:
+1. `timeProgress` is a fractional float (e.g. `12.7`), not an integer index
+2. `buildTemporalGeoJson` linearly interpolates each station's value between the two surrounding time-steps before writing it to the GeoJSON `value` property
+3. Mapbox's `interpolate` expression on `circle-color` then blends colours in GPU
+4. Playback uses `requestAnimationFrame` advancing **3 time-steps / second**
 
 ### Charts — time-series / tabular responses
 
@@ -82,7 +116,7 @@ Responsible for all user interaction: sending queries, displaying the conversati
 
 ### Map Visualisation Component (`components/GeoHeatmapMap.tsx`)
 
-Renders GeoJSON point data on a Mapbox map. Automatically switches between heatmap, cluster, and individual point layers based on zoom level.
+Renders GeoJSON point data on a Mapbox map. Automatically switches between heatmap, cluster, and individual point layers based on zoom level. When `visualization_type` is `map_temporal`, hides the zoom-based layers and activates the temporal point layers with a time slider below the map.
 
 | Prop | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -90,6 +124,14 @@ Renders GeoJSON point data on a Mapbox map. Automatically switches between heatm
 | `externalData` | `ApiResponse \| null` | ❌ | `null` | GeoJSON data injected from the chat response |
 | `autoRefresh` | `boolean` | ❌ | `true` | Enable periodic data refresh (standalone mode) |
 | `refreshInterval` | `number` | ❌ | `30000` | Refresh interval in milliseconds |
+
+**Key internal functions:**
+
+| Function | Description |
+|---|---|
+| `parseTemporalData` | Splits the flat `series` array into per-station blocks by detecting timestamp resets; falls back to equal-split if block count mismatches station count; returns sorted timestamps, per-station `Map<time, value>`, global range, and unit |
+| `buildTemporalGeoJson` | Takes a fractional `timeProgress` float, linearly interpolates each station's value between adjacent time-steps, and returns a `FeatureCollection` ready to push to the `temporal-geodata` source |
+| `parseTemporalData` (pendingData) | Also called inside the map `load` handler so that temporal data arriving before the map is ready is processed correctly |
 
 ### Dashboard Page (`app/dashboard/page.tsx`)
 
@@ -177,6 +219,7 @@ Key packages (already included):
 ### Visualisation Panel (Dashboard — Right Panel / Standalone Page)
 
 - **Map view** — dynamic heatmap, zoom-based layer switching (heatmap → clusters → individual points), interactive popups
+- **Temporal map view** — coloured station points driven by time-series data; time slider below the map with play/pause, scrubbing, and smooth per-frame value interpolation
 - **Chart view** — line, bar, scatter, and other chart types driven by the `chart_configs` returned by the backend
 - Automatically selects the right visualisation based on `visualization_type` in the API response
 - Updates instantly from chat responses (dashboard mode)
