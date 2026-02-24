@@ -40,6 +40,8 @@ Process a natural-language query and return structured, visualisation-ready data
     "columns": ["station_id", "timestamp", "value"]
   },
   "visualization_type": "time_series",
+  "layer_id": "temperature",
+  "layer_label": "Air Temperature",
   "error": null
 }
 ```
@@ -47,6 +49,8 @@ Process a natural-language query and return structured, visualisation-ready data
 | Field | Type | Description |
 |---|---|---|
 | `status` | string | `"success"` or `"error"` |
+| `layer_id` | string | Stable machine identifier for the layer, e.g. `"temperature"`, `"taxi"`, `"pm25"`. Used as the key in the Dashboard `layers` state and as the prefix for all Mapbox source/layer IDs. |
+| `layer_label` | string | Human-readable name shown in the `LayerToggle` panel, e.g. `"Air Temperature"`, `"Taxi Availability"`. |
 | `data.records` | array | Observation data points; each entry represents one reading at a station |
 | `data.records[].station_id` | string | Unique identifier for the weather station |
 | `data.records[].timestamp` | string | ISO-8601 timestamp with timezone offset |
@@ -65,6 +69,8 @@ Process a natural-language query and return structured, visualisation-ready data
 | `data.chart_configs[].y_label` | string | Display label for the y-axis |
 | `data.columns` | array | Ordered list of keys present in each record |
 | `visualization_type` | `str` | One of: `map`, `map_temporal`, `time_series`, `generic` |
+| `layer_id` | string | Stable machine identifier for the layer (see above) |
+| `layer_label` | string | Human-readable layer name (see above) |
 | `error` | null | `null` on success |
 
 **Response — success (map / GeoJSON)**
@@ -86,6 +92,8 @@ Process a natural-language query and return structured, visualisation-ready data
     }
   },
   "visualization_type": "map_temporal",
+  "layer_id": "temperature",
+  "layer_label": "Air Temperature",
   "error": null
 }
 ```
@@ -93,6 +101,8 @@ Process a natural-language query and return structured, visualisation-ready data
 | Field | Type | Description |
 |---|---|---|
 | `status` | string | `"success"` or `"error"` |
+| `layer_id` | string | Stable machine identifier for the layer, e.g. `"temperature"`, `"taxi"`, `"pm25"`. Used as the key in the Dashboard `layers` state and as the prefix for all Mapbox source/layer IDs. |
+| `layer_label` | string | Human-readable name shown in the `LayerToggle` panel, e.g. `"Air Temperature"`, `"Taxi Availability"`. |
 | `data.geojson` | object | Standard GeoJSON `FeatureCollection`; each `Feature` carries sensor/station properties |
 | `data.bounds` | array | `[[south, west], [north, east]]` bounding box in WGS-84 |
 | `data.center` | object | Recommended map centre derived from the data extent |
@@ -104,6 +114,8 @@ Process a natural-language query and return structured, visualisation-ready data
 | `data.temporal.series[].attribute` | string | Raw attribute name from the source dataset |
 | `data.temporal.unit` | string | Physical unit of the `value` field (e.g. `"deg C"`) |
 | `visualization_type` | `str` | One of: `map`, `map_temporal`, `time_series`, `generic` |
+| `layer_id` | string | Stable machine identifier for the layer (see above) |
+| `layer_label` | string | Human-readable layer name (see above) |
 | `error` | null | `null` on success |
 
 **Response — error**
