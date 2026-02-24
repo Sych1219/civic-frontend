@@ -33,7 +33,7 @@ export default function LayerToggle({
   if (layerIds.length === 0) return null;
 
   return (
-    <div className="absolute bottom-4 left-4 z-10 bg-slate-900/90 backdrop-blur rounded-xl shadow-2xl overflow-hidden min-w-[200px] max-w-[260px]">
+    <div className="absolute bottom-4 left-4 z-10 bg-slate-900 backdrop-blur rounded-xl shadow-2xl overflow-hidden min-w-[200px] max-w-[260px]">
       <div className="px-4 py-2.5 border-b border-slate-700">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Layers</p>
       </div>

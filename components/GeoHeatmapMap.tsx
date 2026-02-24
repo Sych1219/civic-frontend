@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import LayerToggle from '@/components/LayerToggle';
 import type { ApiResponse, MapData, VisualizationMode } from '@/types/api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -24,6 +25,8 @@ interface GeoHeatmapMapProps {
   layers?: Record<string, ApiResponse>;
   /** Visibility override per layer_id; defaults to true */
   visibility?: Record<string, boolean>;
+  onToggleLayer?: (layerId: string) => void;
+  onRemoveLayer?: (layerId: string) => void;
   autoRefresh?: boolean;
   refreshInterval?: number;
 }
@@ -50,6 +53,8 @@ export default function GeoHeatmapMap({
   mapboxToken,
   layers = {},
   visibility = {},
+  onToggleLayer,
+  onRemoveLayer,
 }: GeoHeatmapMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
@@ -476,6 +481,16 @@ export default function GeoHeatmapMap({
               <span className="text-lg font-medium text-gray-900">Loading map…</span>
             </div>
           </div>
+        )}
+
+        {/* Layer toggle — positioned inside map area so it doesn't overlap the time slider */}
+        {!loading && onToggleLayer && onRemoveLayer && (
+          <LayerToggle
+            layers={layers}
+            visibility={visibility}
+            onToggle={onToggleLayer}
+            onRemove={onRemoveLayer}
+          />
         )}
 
         {/* Legend — static layers */}

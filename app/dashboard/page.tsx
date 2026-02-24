@@ -5,7 +5,6 @@ import { BarChart2, MapPin, AlertCircle } from 'lucide-react';
 import ChatPanel from '@/components/ChatPanel';
 import GeoHeatmapMap from '@/components/GeoHeatmapMap';
 import ChartPanel from '@/components/ChartPanel';
-import LayerToggle from '@/components/LayerToggle';
 import type { ApiResponse, MapData, TimeSeriesData } from '@/types/api';
 
 export default function DashboardPage() {
@@ -86,6 +85,8 @@ export default function DashboardPage() {
           mapboxToken={mapboxToken}
           layers={mapLayers}
           visibility={layerVisibility}
+          onToggleLayer={handleToggleLayer}
+          onRemoveLayer={handleRemoveLayer}
         />
       );
     }
@@ -144,16 +145,6 @@ export default function DashboardPage() {
       {/* Right Panel — Visualisation */}
       <div className="flex-1 relative overflow-hidden">
         {renderVisualization()}
-
-        {/* Layer toggle panel — map overlay */}
-        {hasMapLayers && (
-          <LayerToggle
-            layers={mapLayers}
-            visibility={layerVisibility}
-            onToggle={handleToggleLayer}
-            onRemove={handleRemoveLayer}
-          />
-        )}
 
         {/* Live-data badge — shown for successful responses */}
         {latestResponse?.status === 'success' && (
