@@ -450,24 +450,11 @@ export default function GeoHeatmapMap({
 
   // ── Derived temporal state for the slider ────────────────────────────────
 
-  const activeTemporalState = activeTemporalLayerId
-    ? layerRuntimes.current[activeTemporalLayerId]?.temporal ?? null
-    : null;
+  const activeTemporalState =
+    activeTemporalLayerId && (visibility[activeTemporalLayerId] ?? true)
+      ? layerRuntimes.current[activeTemporalLayerId]?.temporal ?? null
+      : null;
 
-  const getModeLabel = (mode: VisualizationMode['mode']) => {
-    if (mode === 'heatmap') return 'Heatmap View';
-    if (mode === 'clusters') return 'Cluster View';
-    return 'Individual Points';
-  };
-  const getModeDescription = (mode: VisualizationMode['mode']) => {
-    if (mode === 'heatmap') return 'Zoom < 12';
-    if (mode === 'clusters') return 'Zoom 12–15';
-    return 'Zoom ≥ 15';
-  };
-
-  const hasNonTemporalLayers = Object.values(layers).some(
-    (d) => d.visualization_type !== 'map_temporal'
-  );
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -491,39 +478,6 @@ export default function GeoHeatmapMap({
             onToggle={onToggleLayer}
             onRemove={onRemoveLayer}
           />
-        )}
-
-        {/* Legend — static layers */}
-        {!loading && hasNonTemporalLayers && (
-          <div className="absolute top-4 right-4 bg-white rounded-lg shadow-lg p-4 z-10 min-w-[220px]">
-            <div className="space-y-3">
-              <div className="border-b pb-3">
-                <h3 className="font-bold text-gray-900 text-sm mb-2">Current View</h3>
-                <div className="flex items-center justify-between">
-                  <span className="text-blue-600 font-semibold">{getModeLabel(visualizationMode.mode)}</span>
-                  <span className="text-xs text-gray-500">z: {visualizationMode.zoom}</span>
-                </div>
-                <p className="text-xs text-gray-600 mt-1">{getModeDescription(visualizationMode.mode)}</p>
-              </div>
-              <div className="space-y-2">
-                <h4 className="font-semibold text-gray-900 text-xs uppercase tracking-wide">Zoom Levels</h4>
-                <div className="space-y-1 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-red-500" />
-                    <span className="text-gray-700">Heatmap (low zoom)</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 rounded-full bg-[#51bbd6]" />
-                    <span className="text-gray-700">Clusters (mid zoom)</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 rounded-full bg-[#11b4da]" />
-                    <span className="text-gray-700">Points (high zoom)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         )}
 
         {/* Legend — temporal layer */}
