@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { SendHorizontal, Loader2, BarChart2 } from 'lucide-react';
-import type { ApiResponse, MapData, TimeSeriesData } from '@/types/api';
+import type { ApiResponse, MapData, TimeSeriesData } from '@/types/api'; // MapData/TimeSeriesData still used in the message bubble metadata
 
 interface Message {
   id: string;
@@ -31,7 +31,7 @@ export default function ChatPanel({
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionId] = useState(`session-${Date.now()}`);
+  const sessionIdRef = useRef<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -65,7 +65,7 @@ export default function ChatPanel({
         },
         body: JSON.stringify({
           query: userMessage.content,
-          session_id: sessionId,
+          ...(sessionIdRef.current ? { session_id: sessionIdRef.current } : {}),
           context: {}
         }),
       });
@@ -76,18 +76,20 @@ export default function ChatPanel({
 
       const data: ApiResponse = await response.json();
 
-      // Create assistant message
+      // Echo the server-assigned session_id on all subsequent requests
+      if (data.session_id) {
+        sessionIdRef.current = data.session_id;
+      }
+
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: data.message_id ?? (Date.now() + 1).toString(),
         role: 'assistant',
-        content: generateResponseMessage(data),
+        content: data.content,
         timestamp: new Date(),
         data: data
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-
-      // Forward to visualisation panel for all non-error responses
       onDataReceived(data);
 
     } catch (error) {
@@ -103,41 +105,6 @@ export default function ChatPanel({
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const generateResponseMessage = (data: ApiResponse): string => {
-    if (data.status !== 'success' || data.visualization_type === 'error') {
-      return data.error || 'Something went wrong. Please try again.';
-    }
-
-    switch (data.visualization_type) {
-      case 'map':
-      case 'map_temporal': {
-        const mapData = data.data as MapData;
-        const temporal = mapData.temporal;
-        return [
-          `Showing ${mapData.features_count} station${mapData.features_count !== 1 ? 's' : ''} on the map.`,
-          temporal
-            ? ` ${temporal.series.length} time-point${temporal.series.length !== 1 ? 's' : ''} available (${temporal.unit}).`
-            : '',
-        ].join('');
-      }
-      case 'time_series':
-      case 'generic': {
-        const tsData = data.data as TimeSeriesData;
-        const title = tsData.chart_configs?.[0]?.title ?? 'Chart';
-        const count = tsData.records?.length ?? 0;
-        const stats = tsData.summary_stats?.value;
-        return [
-          `${title}: ${count} data point${count !== 1 ? 's' : ''}.`,
-          stats
-            ? ` Mean: ${stats.mean.toFixed(1)}, Range: ${stats.min.toFixed(1)} – ${stats.max.toFixed(1)}.`
-            : '',
-        ].join('');
-      }
-      default:
-        return 'Visualisation updated.';
     }
   };
 

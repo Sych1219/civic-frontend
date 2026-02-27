@@ -53,6 +53,15 @@ export interface MapData {
   temporal?: TemporalData;
 }
 
+// ── Data context (matched endpoint metadata) ────────────────────────────────
+
+export interface DataContext {
+  endpoint_id: string;
+  endpoint_description: string;
+  confidence: number;
+  triggered_at: string;
+}
+
 // ── Top-level response ───────────────────────────────────────────────────────
 
 export interface ApiResponse {
@@ -62,9 +71,17 @@ export interface ApiResponse {
   visualization_type: VisualizationType;
   error: string | null;
   /** Stable machine identifier for the layer, e.g. "temperature", "taxi", "pm25" */
-  layer_id?: string;
+  layer_id?: string | null;
   /** Human-readable name shown in the LayerToggle panel, e.g. "Air Temperature" */
-  layer_label?: string;
+  layer_label?: string | null;
+  /** LLM-generated plain-English summary; an LLM apology when status is "error". Always present. */
+  content: string;
+  /** Echoed or newly created session UUID. Always present. */
+  session_id: string;
+  /** Server-generated UUID v4 for this response turn. Always present. */
+  message_id: string;
+  /** API call metadata; null when status is "error". */
+  data_context: DataContext | null;
 }
 
 // ── Map visualisation modes (used by GeoHeatmapMap) ─────────────────────────

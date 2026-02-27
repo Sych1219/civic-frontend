@@ -1,8 +1,40 @@
+# Civic App — API Contract
+
+> Defines every REST endpoint, request/response shapes, and error semantics.
+
+## Table of Contents
+
+- [Base URL](#base-url)
+- [Endpoints](#endpoints)
+    - [POST /api/query](#post-apiquery)
+    - [GET /api/endpoints](#get-apiendpoints)
+    - [GET /health](#get-health)
+    - [GET /](#get-)
+- [Models](#models)
+    - [QueryRequest](#queryrequest)
+    - [QueryResponse](#queryresponse)
+    - [DataContext](#datacontext)
+    - [HealthResponse](#healthresponse)
+    - [GeoJSON Models](#geojson-models-in-appdataprocessorpy)
+- [Error Handling](#error-handling)
+- [Interactive Docs](#interactive-docs)
+
+---
+
+## Base URL
+
+```
+http://localhost:8000      # local development
+https://<deployed-host>    # production
+```
+
+---
+
 ## Endpoints
 
 ### `POST /api/query`
 
-Process a natural-language query and return structured, visualisation-ready data.
+Process a natural-language query and return structured, visualisation-ready data. LLM summarisation and conversation history are always active. On the first call `session_id` may be omitted; the server generates one and returns it. The frontend must echo it on every subsequent request.
 
 **Request**
 
@@ -10,7 +42,7 @@ Process a natural-language query and return structured, visualisation-ready data
 // Content-Type: application/json
 {
   "query": "Show me air temperature for today",   // required
-  "session_id": "optional-session-uuid",           // optional
+  "session_id": "session-uuid-123",               // omit only on the very first call; server creates one
   "context": {}                                    // optional
 }
 ```
@@ -40,38 +72,20 @@ Process a natural-language query and return structured, visualisation-ready data
     "columns": ["station_id", "timestamp", "value"]
   },
   "visualization_type": "time_series",
-  "layer_id": "temperature",
-  "layer_label": "Air Temperature",
-  "error": null
+  "layer_id": null,
+  "layer_label": null,
+  "error": null,
+  "session_id": "session-uuid-123",
+  "message_id": "msg-uuid-001",
+  "content": "Across 60 weather stations in Singapore, the air temperature is currently averaging 28.5 °C, ranging from 26.0 °C to 31.0 °C.",
+  "data_context": {
+    "endpoint_id": "3a5f2831-815b-4a0a-bbc6-38e54598c8d9",
+    "endpoint_description": "Get real-time air temperature readings from weather stations",
+    "confidence": 0.94,
+    "triggered_at": "2026-02-22T10:00:00+08:00"
+  }
 }
 ```
-
-| Field | Type | Description |
-|---|---|---|
-| `status` | string | `"success"` or `"error"` |
-| `layer_id` | string | Stable machine identifier for the layer, e.g. `"temperature"`, `"taxi"`, `"pm25"`. Used as the key in the Dashboard `layers` state and as the prefix for all Mapbox source/layer IDs. |
-| `layer_label` | string | Human-readable name shown in the `LayerToggle` panel, e.g. `"Air Temperature"`, `"Taxi Availability"`. |
-| `data.records` | array | Observation data points; each entry represents one reading at a station |
-| `data.records[].station_id` | string | Unique identifier for the weather station |
-| `data.records[].timestamp` | string | ISO-8601 timestamp with timezone offset |
-| `data.records[].value` | number | Sensor reading for the queried metric |
-| `data.summary_stats` | object | Aggregated statistics computed across all records for each numeric column |
-| `data.summary_stats.value.mean` | number | Arithmetic mean |
-| `data.summary_stats.value.min` | number | Minimum observed value |
-| `data.summary_stats.value.max` | number | Maximum observed value |
-| `data.summary_stats.value.std` | number | Standard deviation |
-| `data.chart_configs` | array | Rendering hints for the frontend chart component |
-| `data.chart_configs[].type` | string | Chart type — `"line"`, `"bar"`, `"scatter"`, etc. |
-| `data.chart_configs[].title` | string | Human-readable chart title |
-| `data.chart_configs[].x_axis` | string | Record field to map to the x-axis |
-| `data.chart_configs[].y_axis` | string | Record field to map to the y-axis |
-| `data.chart_configs[].x_label` | string | Display label for the x-axis |
-| `data.chart_configs[].y_label` | string | Display label for the y-axis |
-| `data.columns` | array | Ordered list of keys present in each record |
-| `visualization_type` | `str` | One of: `map`, `map_temporal`, `time_series`, `generic` |
-| `layer_id` | string | Stable machine identifier for the layer (see above) |
-| `layer_label` | string | Human-readable layer name (see above) |
-| `error` | null | `null` on success |
 
 **Response — success (map / GeoJSON)**
 
@@ -94,29 +108,18 @@ Process a natural-language query and return structured, visualisation-ready data
   "visualization_type": "map_temporal",
   "layer_id": "temperature",
   "layer_label": "Air Temperature",
-  "error": null
+  "error": null,
+  "session_id": "session-uuid-123",
+  "message_id": "msg-uuid-002",
+  "content": "Air temperature readings are available across 12 stations in Singapore, with the latest value at 28.3 °C.",
+  "data_context": {
+    "endpoint_id": "3a5f2831-815b-4a0a-bbc6-38e54598c8d9",
+    "endpoint_description": "Get real-time air temperature readings from weather stations",
+    "confidence": 0.94,
+    "triggered_at": "2026-02-22T14:16:00+08:00"
+  }
 }
 ```
-
-| Field | Type | Description |
-|---|---|---|
-| `status` | string | `"success"` or `"error"` |
-| `layer_id` | string | Stable machine identifier for the layer, e.g. `"temperature"`, `"taxi"`, `"pm25"`. Used as the key in the Dashboard `layers` state and as the prefix for all Mapbox source/layer IDs. |
-| `layer_label` | string | Human-readable name shown in the `LayerToggle` panel, e.g. `"Air Temperature"`, `"Taxi Availability"`. |
-| `data.geojson` | object | Standard GeoJSON `FeatureCollection`; each `Feature` carries sensor/station properties |
-| `data.bounds` | array | `[[south, west], [north, east]]` bounding box in WGS-84 |
-| `data.center` | object | Recommended map centre derived from the data extent |
-| `data.features_count` | number | Total number of GeoJSON features returned |
-| `data.property_type` | string | `"temporal"` or `"static"` — whether features carry time-series data |
-| `data.temporal` | object | Present only when `property_type` is `"temporal"` |
-| `data.temporal.series[].time` | string | ISO-8601 timestamp with timezone offset |
-| `data.temporal.series[].value` | number | Numeric reading at this timestamp |
-| `data.temporal.series[].attribute` | string | Raw attribute name from the source dataset |
-| `data.temporal.unit` | string | Physical unit of the `value` field (e.g. `"deg C"`) |
-| `visualization_type` | `str` | One of: `map`, `map_temporal`, `time_series`, `generic` |
-| `layer_id` | string | Stable machine identifier for the layer (see above) |
-| `layer_label` | string | Human-readable layer name (see above) |
-| `error` | null | `null` on success |
 
 **Response — error**
 
@@ -125,15 +128,153 @@ Process a natural-language query and return structured, visualisation-ready data
   "status": "error",
   "data": {},
   "visualization_type": "error",
-  "error": "Could not understand the query. Please try rephrasing your question."
+  "error": "Could not understand the query. Please try rephrasing your question.",
+  "session_id": "session-uuid-123",
+  "message_id": "msg-uuid-003",
+  "content": "I'm sorry, I couldn't find a matching dataset for that question. Try asking: 'Show me air temperature', 'What are PM2.5 levels today?', or 'Where are taxis right now?'",
+  "data_context": null
 }
 ```
 
-| Field | Type | Description |
-|---|---|---|
-| `status` | string | `"error"` |
-| `data` | object | Always an empty object on error |
-| `visualization_type` | `str` | `"error"` — signals the frontend to render an error state; one of: `map`, `map_temporal`, `time_series`, `generic`, `error` |
-| `error` | string | Human-readable error message describing what went wrong |
+---
+
+### `GET /api/endpoints`
+
+List all available Singapore government data API endpoints loaded from the schema file.
+
+**Response**
+
+```json
+{
+  "total": 15,
+  "endpoints": [
+    {
+      "id": "3a5f2831-815b-4a0a-bbc6-38e54598c8d9",
+      "description": "Get real-time air temperature readings from weather stations",
+      "parameters": [
+        {"name": "date", "type": "string", "location": "query", "required": false}
+      ]
+    }
+  ]
+}
+```
 
 ---
+
+### `GET /health`
+
+Health-check endpoint for load balancers and monitoring.
+
+**Response**
+
+```json
+{
+  "status": "healthy",
+  "service": "civic-app-backend",
+  "version": "1.0.0"
+}
+```
+
+---
+
+### `GET /`
+
+Root endpoint returning service metadata.
+
+**Response**
+
+```json
+{
+  "service": "Civic App Backend API",
+  "version": "1.0.0",
+  "status": "running",
+  "docs": "/docs",
+  "health": "/health"
+}
+```
+
+---
+
+## Models
+
+All models are defined in `app/models.py` using Pydantic v2.
+
+### `QueryRequest`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `query` | `str` | ✅ | Natural-language query from user |
+| `session_id` | `str \| null` | ❌ on first call only | Server auto-creates and returns one if omitted; must be echoed on all subsequent requests |
+| `context` | `dict \| null` | ❌ | Optional context data |
+
+### `QueryResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `str` | `"success"` or `"error"` |
+| `data` | `dict` | Processed data ready for visualisation |
+| `visualization_type` | `str` | One of: `map`, `map_temporal`, `time_series`, `generic`, `error` |
+| `layer_id` | `str \| null` | Stable machine identifier for the layer (e.g. `"temperature"`, `"taxi"`, `"pm25"`). Used as the key in the Dashboard `layers` state and as the prefix for all Mapbox source/layer IDs. Present only when `visualization_type` is `map` or `map_temporal`; `null` otherwise. |
+| `layer_label` | `str \| null` | Human-readable layer name shown in the `LayerToggle` panel (e.g. `"Air Temperature"`). Present only when `visualization_type` is `map` or `map_temporal`; `null` otherwise. |
+| `error` | `str \| null` | Error message when `status` is `"error"` |
+| `session_id` | `str` | Echoed or newly created session UUID. Always present; auto-created on first call. |
+| `message_id` | `str` | Server-generated UUID v4 for this response turn. Always present. |
+| `content` | `str` | LLM-generated plain-English summary; an LLM apology when `status` is `"error"`. Always present. |
+| `data_context` | `DataContext \| null` | API call metadata (matched endpoint, confidence). Always present; `null` when `status` is `"error"`. |
+
+### `HealthResponse`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `str` | `"healthy"` |
+| `service` | `str` | `"civic-app-backend"` |
+| `version` | `str` | Semver string |
+
+### GeoJSON Models (in `app/data_processor.py`)
+
+| Model | Purpose |
+|-------|---------|
+| `PointGeometry` | `{"type": "Point", "coordinates": [lon, lat]}` |
+| `MultiPointGeometry` | `{"type": "MultiPoint", "coordinates": [[lon, lat], ...]}` |
+| `TemporalProperty` | `{"series": [...], "unit": "deg C"}` |
+| `Properties` | `{"static": {...}, "temporal": TemporalProperty \| null}` |
+| `Feature` | Standard GeoJSON Feature with typed geometry & properties |
+| `FeatureCollection` | Standard GeoJSON FeatureCollection |
+| `GeoJSONProcessedResponse` | Wrapper: `{"data_type": "geojson", "geojson": FeatureCollection}` |
+
+### `DataContext`
+
+Sub-model nested in `QueryResponse.data_context`. Always present when `status` is `"success"`; `null` when `status` is `"error"`.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `endpoint_id` | `str` | UUID of the matched gov API endpoint |
+| `endpoint_description` | `str` | Human-readable description from the schema |
+| `confidence` | `float` | Matching confidence score `[0, 1]` |
+| `triggered_at` | `str` | ISO-8601 timestamp of the external API call |
+
+---
+
+## Error Handling
+
+Errors are returned **inside** a `QueryResponse` (HTTP 200) so the frontend always receives a predictable shape.
+
+| Scenario | `error` message | Trigger |
+|----------|----------------|---------|
+| Low confidence match | `"Could not understand the query…"` | `confidence < 0.5` |
+| External API failure | `"External API error: HTTP 502…"` | `APIError` from `api_client.py` |
+| Missing required param | `"Validation error: Required parameter 'date' is missing"` | `ValueError` from `QueryBuilder` |
+| Unexpected failure | `"Internal server error: …"` | Catch-all `Exception` |
+
+> **Note:** The `GET /api/endpoints` route raises `HTTPException(500)` on failure instead of the `QueryResponse` envelope because it is an admin/introspection endpoint.
+
+---
+
+## Interactive Docs
+
+FastAPI auto-generates interactive documentation:
+
+| URL | Format |
+|-----|--------|
+| `/docs` | Swagger UI |
+| `/redoc` | ReDoc |
