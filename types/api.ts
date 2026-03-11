@@ -4,11 +4,37 @@
 
 // ── Taxi data ────────────────────────────────────────────────────────────────
 
-export interface TaxiData {
-  zone: string;
+export interface TaxiQueryContext {
+  type: 'radius' | 'nearest' | 'zone' | 'polygon' | 'road' | 'route';
+  lat?: number;
+  lon?: number;
+  radius_m?: number;
+  limit?: number;
+  zone_name?: string;
+  category?: string;
+  buffer_m?: number;
+  road_name?: string;
+  polygon?: object;
+  route?: object;
+}
+
+export interface TaxiSnapshot {
+  timestamp: string;
+  taxi_count: number;
   locations: GeoJSON.FeatureCollection;
+}
+
+export interface TaxiData {
+  type: 'spatial_query' | 'timeline';
   taxi_count: number;
   snapshot_time: string;
+  context: TaxiQueryContext;
+  locations: GeoJSON.FeatureCollection;
+  // timeline-specific fields
+  from_time?: string;
+  to_time?: string;
+  window_minutes?: number;
+  snapshots?: TaxiSnapshot[];
 }
 
 // ── Top-level response ───────────────────────────────────────────────────────
@@ -18,6 +44,7 @@ export interface ApiResponse {
   data: TaxiData | null;
   metadata: {
     execution_time_ms: number;
+    llm_latency_ms: number | null;
   };
 }
 

@@ -133,7 +133,7 @@ export default function ChatPanel({
               {message.data?.data && (
                 <div className="mt-2 pt-2 border-t border-slate-200">
                   <span className="text-xs text-slate-500">
-                    {message.data.data.taxi_count} taxis in {message.data.data.zone}
+                    {message.data.data.taxi_count} taxis in {message.data.data.context?.zone_name ?? message.data.data.context?.type ?? 'area'}
                   </span>
                 </div>
               )}

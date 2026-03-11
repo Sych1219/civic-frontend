@@ -10,7 +10,13 @@
 - [Models](#models)
     - [QueryRequest](#queryrequest)
     - [QueryResponse](#queryresponse)
-    - [TaxiData](#taxidata)
+    - [Data Union (tagged)](#data-union-tagged)
+        - [SpatialQueryData](#spatialquerydata)
+        - [TimelineData](#timelinedata)
+        - [ZoneGeometryData](#zonegeometrydata)
+    - [Context Union (tagged)](#context-union-tagged)
+    - [GeoJSON Types](#geojson-types)
+- [Error Handling](#error-handling)
 
 ---
 
@@ -34,34 +40,60 @@ Process a natural-language query and return a plain-English answer along with st
 ```jsonc
 // Content-Type: application/json
 {
-  "query": "how many taxi in punggol region?"   // required
+  "query": "how many taxis are near changi airport?"   // required
 }
 ```
 
-**Response — success (taxi zone query)**
+**Response — success (spatial query)**
+
+The `data` field is the same tagged union returned by the underlying gov-data service (see [Data Union](#data-union-tagged)).
 
 ```json
 {
-  "answer": "There are 48 available taxis in the Punggol zone as of 15:52 SGT.",
+  "answer": "There are 42 taxis within 3 km of Changi Airport as of 08:00 SGT.",
   "data": {
-    "zone": "PUNGGOL",
+    "type": "spatial_query",
+    "taxi_count": 42,
+    "snapshot_time": "2026-02-28T08:00:00+08:00",
+    "context": { "type": "radius", "lat": 1.3644, "lon": 103.9915, "radius_m": 3000 },
     "locations": {
       "type": "FeatureCollection",
       "features": [
-        {
-          "type": "Feature",
-          "geometry": {
-            "type": "Point",
-            "coordinates": [103.8928, 1.40053]
-          }
-        }
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [103.992, 1.361] }, "properties": null },
+        { "type": "Feature", "geometry": { "type": "Point", "coordinates": [103.987, 1.365] }, "properties": null }
       ]
-    },
-    "taxi_count": 48,
-    "snapshot_time": "2026-03-05T15:52:59+08:00"
+    }
   },
   "metadata": {
     "execution_time_ms": 24060
+  }
+}
+```
+
+**Response — success (timeline query)**
+
+```json
+{
+  "answer": "Here is the taxi activity near CBD from 08:00 to 09:00 SGT.",
+  "data": {
+    "type": "timeline",
+    "from_time": "2026-02-28T08:00:00+08:00",
+    "to_time": "2026-02-28T09:00:00+08:00",
+    "snapshots": [
+      {
+        "timestamp": "2026-02-28T08:00:00+08:00",
+        "taxi_count": 3200,
+        "locations": {
+          "type": "FeatureCollection",
+          "features": [
+            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [103.832, 1.304] }, "properties": null }
+          ]
+        }
+      }
+    ]
+  },
+  "metadata": {
+    "execution_time_ms": 312
   }
 }
 ```
@@ -81,22 +113,102 @@ Process a natural-language query and return a plain-English answer along with st
 | Field | Type | Description |
 |-------|------|-------------|
 | `answer` | `str` | Plain-English answer generated for the query |
-| `data` | `object` | Structured response data (shape varies by query type) |
+| `data` | `SpatialQueryData \| TimelineData \| ZoneGeometryData \| null` | Structured response data — shape determined by `data.type` discriminator |
 | `metadata` | `object` | Request execution metadata |
 | `metadata.execution_time_ms` | `number` | Time taken to process the request in milliseconds |
 
-### `TaxiData`
+---
 
-Shape of `data` for taxi-related queries.
+### Data Union (tagged)
+
+The `data` field is a **tagged union**. Read `data.type` to determine the shape:
+
+| `data.type` | Shape | Triggered by |
+|---|---|---|
+| `spatial_query` | [SpatialQueryData](#spatialquerydata) | Zone, radius, nearest, polygon, road, or route queries |
+| `timeline` | [TimelineData](#timelinedata) | Historical / recent activity queries |
+| `zone_geometry` | [ZoneGeometryData](#zonegeometrydata) | Zone boundary queries |
+
+---
+
+#### `SpatialQueryData`
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `zone` | `str` | Zone name as returned by the API (e.g. `"PUNGGOL"`) |
-| `locations` | `GeoJSON FeatureCollection` | GeoJSON FeatureCollection of `Point` features, one per taxi |
-| `taxi_count` | `number` | Number of available taxis in the zone |
+| `type` | `"spatial_query"` | Discriminator |
+| `taxi_count` | `number` | Number of taxis matching the query |
 | `snapshot_time` | `str` | ISO-8601 timestamp of the data snapshot |
+| `context` | `QueryContext` | Query parameters — see [Context Union](#context-union-tagged) |
+| `locations` | `GeoJSON FeatureCollection` | One `Point` feature per taxi; `properties` may be `null` or contain `distance_m` |
 
-#### GeoJSON Feature (taxi location)
+Example:
+
+```json
+{
+  "type": "spatial_query",
+  "taxi_count": 187,
+  "snapshot_time": "2026-02-28T08:00:00+08:00",
+  "context": { "type": "zone", "zone_name": "tampines", "category": "district" },
+  "locations": {
+    "type": "FeatureCollection",
+    "features": [
+      { "type": "Feature", "geometry": { "type": "Point", "coordinates": [103.820, 1.352] }, "properties": null }
+    ]
+  }
+}
+```
+
+---
+
+#### `TimelineData`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"timeline"` | Discriminator |
+| `from_time` | `str` | ISO-8601 start of the window |
+| `to_time` | `str` | ISO-8601 end of the window |
+| `window_minutes` | `number` | *(Recent-activity only)* Lookback window in minutes |
+| `snapshots` | `SnapshotEntry[]` | Ordered list of per-minute snapshots |
+
+##### `SnapshotEntry`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | `str` | ISO-8601 timestamp of this snapshot |
+| `taxi_count` | `number` | Taxi count at this snapshot |
+| `locations` | `GeoJSON FeatureCollection` | Taxi positions at this snapshot |
+
+---
+
+#### `ZoneGeometryData`
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `"zone_geometry"` | Discriminator |
+| `name` | `str` | Zone name (e.g. `"tampines"`, `"aye"`) |
+| `category` | `"district" \| "road" \| "highway"` | Zone category |
+| `geometry` | `GeoJSON Geometry` | `Polygon` for districts; `LineString` for roads/highways |
+
+---
+
+### Context Union (tagged)
+
+Nested inside `SpatialQueryData.context`. Read `context.type`:
+
+| `context.type` | Fields |
+|---|---|
+| `radius` | `lat`, `lon`, `radius_m` |
+| `nearest` | `lat`, `lon`, `limit` |
+| `zone` | `zone_name`, `category` |
+| `polygon` | `polygon` (GeoJSON Polygon) |
+| `road` | `road_name`, `category`, `buffer_m` |
+| `route` | `route` (GeoJSON LineString), `buffer_m` |
+
+---
+
+### GeoJSON Types
+
+#### Feature (taxi location)
 
 ```json
 {
@@ -104,7 +216,18 @@ Shape of `data` for taxi-related queries.
   "geometry": {
     "type": "Point",
     "coordinates": [longitude, latitude]
-  }
+  },
+  "properties": null
+}
+```
+
+For nearest-taxi queries, `properties` includes `distance_m`:
+
+```json
+{
+  "type": "Feature",
+  "geometry": { "type": "Point", "coordinates": [103.820, 1.352] },
+  "properties": { "distance_m": 123.4 }
 }
 ```
 
@@ -114,8 +237,25 @@ Shape of `data` for taxi-related queries.
 
 Errors are returned as non-2xx HTTP responses or within the response body.
 
-| Scenario | Behaviour |
-|----------|-----------|
-| Unrecognised query | `answer` explains the limitation; `data` may be empty or `null` |
-| External API failure | `answer` contains an error description |
-| Invalid request body | HTTP 422 Unprocessable Entity |
+**Error body shape**:
+
+```json
+{
+  "answer": "I was unable to process your query due to an upstream error.",
+  "data": null,
+  "metadata": { "execution_time_ms": 120 },
+  "error": {
+    "code": "UPSTREAM_ERROR",
+    "message": "gov-data service unavailable",
+    "details": {}
+  }
+}
+```
+
+| Scenario | HTTP Status | `error.code` |
+|----------|-------------|--------------|
+| Upstream gov-data service unavailable | 502 | `UPSTREAM_ERROR` |
+| Unknown zone / no snapshot at `datetime` | 404 | `NOT_FOUND` |
+| Invalid coordinates or radius ≤ 0 | 400 | `VALIDATION_ERROR` |
+| Malformed request body | 422 | `BAD_REQUEST` |
+| Unrecognised query intent | 200 | — (`answer` explains; `data` is `null`) |
