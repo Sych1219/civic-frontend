@@ -1,6 +1,6 @@
 # Civic Frontend — Design Overview
 
-A chat-driven dashboard built with Next.js. The user types a natural-language query; the backend returns a plain-English answer and structured GeoJSON data; the right panel renders the appropriate visualisation — map with point clusters, heatmap, or individual markers.
+A chat-driven dashboard built with Next.js. The user types a natural-language query; the backend returns a plain-English answer and structured GeoJSON data; the right panel renders the appropriate visualisation — map with point clusters, heatmap, individual markers, or a temporal slider for time-series data.
 
 ---
 
@@ -15,14 +15,14 @@ The dashboard is a split-panel layout: a **chat interface** on the left and a **
 │  │              │  │  Visualisation Panel               ││
 │  │  ChatPanel   │  │                                    ││
 │  │              │  │  GeoHeatmapMap                     ││
-│  │  - Messages  │  │    (Mapbox map with taxi points)   ││
-│  │  - Input     │  │                                    ││
+│  │  - Messages  │  │    (Heatmap / Clusters / Points)   ││
+│  │  - Input     │  │    + Time Slider when timeline     ││
 │  │  - API call  │  │                                    ││
 │  │              │  │                                    ││
 │  └──────────────┘  └────────────────────────────────────┘│
 │         │                        ↑                        │
 │         └────────────────────────┘                        │
-│  answer + data.locations drive the panel                  │
+│  data.type in response selects the rendering mode         │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -31,14 +31,16 @@ The dashboard is a split-panel layout: a **chat interface** on the left and a **
 1. User types a query → `ChatPanel` sends `POST /api/v1/query` to the backend
 2. Backend returns `{ answer, data, metadata }`
 3. `ChatPanel` displays `answer` as the assistant message
-4. `data.locations` (GeoJSON FeatureCollection) is passed to `GeoHeatmapMap` for rendering
+4. `data` (tagged union) is inspected: `data.locations` for spatial queries or `data.snapshots[].locations` for timelines — passed to `GeoHeatmapMap` for rendering
 5. The visualisation panel updates without page navigation
 
 ---
 
 ## Visualisation Mode
 
-### Map — GeoJSON point data
+### `spatial_query` — Static GeoJSON map
+
+`data.type = "spatial_query"`
 
 Automatically switches layers based on zoom level:
 
@@ -47,6 +49,39 @@ Automatically switches layers based on zoom level:
 | **< 12** | Heatmap | Colour-coded density map (blue → red) |
 | **12 – 14** | Clusters | Grouped markers with counts (blue < 100, yellow < 750, pink 750+) |
 | **≥ 15** | Points | Individual data points — click for details |
+
+---
+
+### `timeline` — Temporal map with time slider
+
+`data.type = "timeline"`
+
+When the response carries a `timeline` payload, `GeoHeatmapMap` switches into **temporal mode**: the heatmap/cluster layers are hidden and a **time slider panel** appears below the map. The slider scrubs through `data.snapshots[]`, swapping the active `locations` GeoJSON source on each tick so taxi positions update frame-by-frame.
+
+#### Data shape consumed
+
+```
+data.snapshots[]
+  .timestamp   → displayed in the slider timestamp label
+  .taxi_count  → shown in the snapshot count badge
+  .locations   → GeoJSON FeatureCollection pushed to the map source
+```
+
+#### Time slider panel
+
+| Element | Description |
+|---|---|
+| ▶ / ⏸ button | Starts / pauses animation; resets to beginning if already at the last snapshot |
+| Snapshot counter | `current / total` snapshot index |
+| Timestamp label | Current snapshot time formatted as `HH:MM` (SGT) |
+| `<input type="range">` | Scrub slider — one step per snapshot; dragging pauses playback |
+| Start / end labels | `from_time` and `to_time` formatted as `HH:MM` |
+
+#### Playback behaviour
+
+- Playback advances one snapshot per animation frame tick (rate configurable).
+- Dragging the slider pauses auto-play and jumps directly to the selected snapshot.
+- When the last snapshot is reached, playback stops; pressing ▶ restarts from index 0.
 
 ---
 
@@ -63,18 +98,34 @@ Responsible for all user interaction: sending queries, displaying the conversati
 
 ### Map Visualisation Component (`components/GeoHeatmapMap.tsx`)
 
-Renders GeoJSON point data on a Mapbox map. Automatically switches between heatmap, cluster, and individual point layers based on zoom level.
+Renders GeoJSON point data on a Mapbox map. Branches on `data.type`:
+
+- **`spatial_query`** — zoom-based layer switching (heatmap → clusters → points)
+- **`timeline`** — temporal mode with time slider; one snapshot rendered at a time
 
 | Prop | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `mapboxToken` | `string` | Yes | — | Mapbox GL access token |
-| `geojson` | `GeoJSON FeatureCollection` | No | `null` | Point features to render on the map |
+| `geojson` | `GeoJSON FeatureCollection \| null` | No | `null` | Static point features (`spatial_query` mode) |
+| `timelineData` | `TimelineData \| null` | No | `null` | Snapshot array for temporal mode |
 | `autoRefresh` | `boolean` | No | `true` | Enable periodic data refresh (standalone mode) |
 | `refreshInterval` | `number` | No | `30000` | Refresh interval in milliseconds |
 
+**Key internal state (temporal mode):**
+
+| State | Description |
+|---|---|
+| `snapshotIndex` | Current position in `timelineData.snapshots[]` |
+| `isPlaying` | Whether auto-advance is active |
+| Active source | Mapbox GeoJSON source updated to `snapshots[snapshotIndex].locations` on each index change |
+
 ### Dashboard Page (`app/dashboard/page.tsx`)
 
-Owns the split layout. Passes `data.locations` from the latest chat response into `GeoHeatmapMap`. Handles missing configuration (e.g. no Mapbox token) and shows a live-data indicator badge.
+Owns the split layout. Reads `data.type` from each `onDataReceived` call and passes the right props to `GeoHeatmapMap`:
+- `spatial_query` → passes `geojson={data.locations}`
+- `timeline` → passes `timelineData={data}`
+
+Also handles missing configuration (e.g. no Mapbox token) and shows a live-data indicator badge.
 
 ---
 
@@ -85,10 +136,12 @@ The visualisation panel is data-driven by the backend response fields:
 | Field | Used for |
 |---|---|
 | `answer` | Displayed as the assistant chat message |
-| `data.locations` | GeoJSON FeatureCollection rendered on the map |
-| `data.zone` | Displayed as context in the chat message or map title |
-| `data.taxi_count` | Shown in the chat message summary |
-| `data.snapshot_time` | Shown as the data timestamp |
+| `data.type` | Discriminator — `"spatial_query"`, `"timeline"`, or `"zone_geometry"` |
+| `data.locations` | GeoJSON FeatureCollection rendered on the map *(spatial_query)* |
+| `data.snapshots[].locations` | Per-snapshot GeoJSON for timeline slider *(timeline)* |
+| `data.taxi_count` | Shown in the chat message summary *(spatial_query)* |
+| `data.snapshot_time` | Shown as the data timestamp *(spatial_query)* |
+| `data.context` | Query parameters (zone name, radius, etc.) for map title / context label |
 
 Full request/response schema: [apis-data-contract.md](apis-data-contract.md)
 
@@ -101,14 +154,14 @@ civic-frontend/
 ├── app/
 │   ├── api/chat/              # Chat API route
 │   ├── dashboard/
-│   │   └── page.tsx           # Split layout + visualisation routing
+│   │   └── page.tsx           # Split layout + data.type routing
 │   └── taxi-heatmap/
 │       └── page.tsx           # Standalone map page
 ├── components/
 │   ├── ChatPanel.tsx          # Chat UI + backend integration
-│   └── GeoHeatmapMap.tsx      # Map visualisation component
+│   └── GeoHeatmapMap.tsx      # Map visualisation component (static + temporal)
 ├── types/
-│   └── taxi.ts                # TypeScript type definitions
+│   └── api.ts                 # TypeScript type definitions
 ├── public/
 └── docs/
     ├── design.md              # Design overview (this file)
@@ -148,7 +201,8 @@ civic-frontend/
 
 ### Visualisation Panel (Right Panel)
 
-- **Map view** — dynamic heatmap, zoom-based layer switching (heatmap → clusters → individual points), interactive popups
+- **Static map view** — dynamic heatmap, zoom-based layer switching (heatmap → clusters → individual points), interactive popups
+- **Temporal map view** — taxi positions scraped through time using a slider; play/pause, manual scrubbing, per-snapshot count badge, and `from_time` / `to_time` range labels
 - Updates instantly from chat responses
 - Auto-refresh on a configurable interval (standalone mode)
 
@@ -160,7 +214,8 @@ Try these queries in the dashboard chat:
 
 - "How many taxis are in Punggol?"
 - "Show taxi availability in Jurong"
-- Any natural-language question about taxi availability by zone
+- "Show me taxi activity near CBD from 8am to 9am"
+- Any natural-language question about taxi availability by zone or time range
 
 ---
 
