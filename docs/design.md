@@ -1,6 +1,6 @@
 # Civic Frontend — Design Overview
 
-A chat-driven dashboard built with Next.js. The user types a natural-language query; the backend returns a plain-English answer and structured GeoJSON data; the right panel renders the appropriate visualisation — map with point clusters, heatmap, individual markers, or a temporal slider for time-series data.
+A chat-driven dashboard built with Next.js. The user types a natural-language query; the backend returns a plain-English answer and structured GeoJSON data; the right panel renders the appropriate visualisation — map with point clusters, heatmap, individual markers, or a temporal slider for time-series data. Multiple queries can be overlaid as independent, toggleable layers on the same map.
 
 ---
 
@@ -18,21 +18,28 @@ The dashboard is a split-panel layout: a **chat interface** on the left and a **
 │  │  - Messages  │  │    (Heatmap / Clusters / Points)   ││
 │  │  - Input     │  │    + Time Slider when timeline     ││
 │  │  - API call  │  │                                    ││
-│  │              │  │                                    ││
+│  │              │  │  ┌──────────────┐                  ││
+│  │              │  │  │ LayerToggle  │ ← bottom-left    ││
+│  │              │  │  │  • Layer A ● │                  ││
+│  │              │  │  │  • Layer B ● │                  ││
+│  │              │  │  └──────────────┘                  ││
 │  └──────────────┘  └────────────────────────────────────┘│
 │         │                        ↑                        │
 │         └────────────────────────┘                        │
-│  data.type in response selects the rendering mode         │
+│  data.type selects rendering; layer_id accumulates layers │
 └──────────────────────────────────────────────────────────┘
 ```
 
 ### Data Flow
 
 1. User types a query → `ChatPanel` sends `POST /api/v1/query` to the backend
-2. Backend returns `{ answer, data, metadata }`
+2. Backend returns `{ answer, data, metadata }`, optionally including `layer_id` and `layer_label`
 3. `ChatPanel` displays `answer` as the assistant message
-4. `data` (tagged union) is inspected: `data.locations` for spatial queries or `data.snapshots[].locations` for timelines — passed to `GeoHeatmapMap` for rendering
-5. The visualisation panel updates without page navigation
+4. `DashboardPage` stores the response in a `layers` record keyed by `layer_id` (falls back to a generated ID if absent)
+5. `data` (tagged union) is inspected per layer: `data.locations` for spatial queries or `data.snapshots[].locations` for timelines
+6. All active layers are passed to `GeoHeatmapMap`, each rendered on the shared map
+7. `LayerToggle` (bottom-left of map) reflects the current layer list; visibility and removal are applied immediately
+8. The visualisation panel updates without page navigation
 
 ---
 
@@ -85,6 +92,29 @@ data.snapshots[]
 
 ---
 
+## Multi-Layer Support
+
+Each chat response can carry an optional `layer_id` (and human-readable `layer_label`). `DashboardPage` accumulates responses into a `layers: Record<string, ApiResponse>` map so that successive queries are **additive** — each result appears as its own layer on the map rather than replacing the previous one.
+
+A parallel `visibility: Record<string, boolean>` map tracks which layers are currently shown. `GeoHeatmapMap` reads both maps and applies Mapbox `visibility` layout properties per layer accordingly.
+
+---
+
+## Layer Toggle Panel
+
+`LayerToggle` is a floating panel rendered inside `GeoHeatmapMap`, anchored to the **bottom-left** of the map container. It is only shown when at least one layer is present.
+
+| Element | Description |
+|---|---|
+| Colour dot | Unique colour per layer (cycles through 8 preset colours) |
+| Label | `layer_label` from the API response; if absent, derived as `data.context.zone_name ?? data.context.road_name ?? data.type` |
+| Eye / EyeOff button | Toggles layer visibility on/off; dot and label dim when hidden |
+| × button | Removes the layer entirely (hover to reveal) |
+
+Layer colours are assigned by index position in the `layers` record and are consistent for the lifetime of the layer.
+
+---
+
 ## Components
 
 ### ChatPanel (`components/ChatPanel.tsx`)
@@ -119,11 +149,29 @@ Renders GeoJSON point data on a Mapbox map. Branches on `data.type`:
 | `isPlaying` | Whether auto-advance is active |
 | Active source | Mapbox GeoJSON source updated to `snapshots[snapshotIndex].locations` on each index change |
 
+### Layer Toggle (`components/LayerToggle.tsx`)
+
+Floating panel positioned at `bottom-left` inside the map, rendered by `GeoHeatmapMap`. Receives the full `layers` record, the `visibility` map, an `onToggle` callback, and an `onRemove` callback.
+
+| Prop | Type | Description |
+|---|---|---|
+| `layers` | `Record<string, ApiResponse>` | All active layers keyed by `layer_id` |
+| `visibility` | `Record<string, boolean>` | Current visibility state per layer |
+| `onToggle` | `(layerId: string) => void` | Show/hide a layer |
+| `onRemove` | `(layerId: string) => void` | Delete a layer from the map |
+
+Returns `null` when `layers` is empty (panel auto-hides).
+
 ### Dashboard Page (`app/dashboard/page.tsx`)
 
-Owns the split layout. Reads `data.type` from each `onDataReceived` call and passes the right props to `GeoHeatmapMap`:
-- `spatial_query` → passes `geojson={data.locations}`
-- `timeline` → passes `timelineData={data}`
+Owns the split layout and layer state. On each `onDataReceived` call:
+- Derives a `layer_id` from the response (or generates one)
+- Upserts the response into `layers`
+- Initialises `visibility[layer_id] = true` for new layers
+
+Reads `data.type` per layer and passes the appropriate props to `GeoHeatmapMap`:
+- `spatial_query` → `geojson={data.locations}`
+- `timeline` → `timelineData={data}`
 
 Also handles missing configuration (e.g. no Mapbox token) and shows a live-data indicator badge.
 
@@ -142,6 +190,8 @@ The visualisation panel is data-driven by the backend response fields:
 | `data.taxi_count` | Shown in the chat message summary *(spatial_query)* |
 | `data.snapshot_time` | Shown as the data timestamp *(spatial_query)* |
 | `data.context` | Query parameters (zone name, radius, etc.) for map title / context label |
+| `layer_id` *(optional)* | Stable identifier used as the key in the `layers` record; auto-generated if absent |
+| `layer_label` *(optional)* | Human-readable display name shown in the `LayerToggle` panel; if absent, the frontend derives it as `data.context.zone_name ?? data.context.road_name ?? data.type` |
 
 Full request/response schema: [apis-data-contract.md](apis-data-contract.md)
 
@@ -154,12 +204,13 @@ civic-frontend/
 ├── app/
 │   ├── api/chat/              # Chat API route
 │   ├── dashboard/
-│   │   └── page.tsx           # Split layout + data.type routing
+│   │   └── page.tsx           # Split layout + layer state management
 │   └── taxi-heatmap/
 │       └── page.tsx           # Standalone map page
 ├── components/
 │   ├── ChatPanel.tsx          # Chat UI + backend integration
-│   └── GeoHeatmapMap.tsx      # Map visualisation component (static + temporal)
+│   ├── GeoHeatmapMap.tsx      # Map visualisation component (static + temporal + multi-layer)
+│   └── LayerToggle.tsx        # Floating layer panel (show/hide/remove per layer)
 ├── types/
 │   └── api.ts                 # TypeScript type definitions
 ├── public/
@@ -203,6 +254,8 @@ civic-frontend/
 
 - **Static map view** — dynamic heatmap, zoom-based layer switching (heatmap → clusters → individual points), interactive popups
 - **Temporal map view** — taxi positions scraped through time using a slider; play/pause, manual scrubbing, per-snapshot count badge, and `from_time` / `to_time` range labels
+- **Multi-layer overlay** — each chat response adds a new named layer; layers stack on the same map
+- **Layer Toggle panel** — floating bottom-left panel to show/hide or remove individual layers
 - Updates instantly from chat responses
 - Auto-refresh on a configurable interval (standalone mode)
 
