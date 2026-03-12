@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { MapPin } from 'lucide-react';
 import ChatPanel from '@/components/ChatPanel';
 import GeoHeatmapMap from '@/components/GeoHeatmapMap';
-import type { ApiResponse } from '@/types/api';
+import type { ApiResponse, TimelineData } from '@/types/api';
 
 export default function DashboardPage() {
   const [latestResponse, setLatestResponse] = useState<ApiResponse | null>(null);
@@ -39,8 +39,13 @@ export default function DashboardPage() {
     );
   }
 
-  const geojson = latestResponse?.data?.locations ?? null;
+  const data = latestResponse?.data ?? null;
+  const isTimeline = data?.type === 'timeline';
+  const geojson = !isTimeline ? (data?.locations ?? null) : null;
+  const timelineData = isTimeline ? (data as TimelineData) : null;
+  const hasData = !!data;
 
+  const contextLabel = data?.context?.zone_name ?? data?.context?.type ?? 'area';
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-slate-100">
@@ -54,22 +59,26 @@ export default function DashboardPage() {
 
       {/* Right Panel — Map */}
       <div className="flex-1 relative overflow-hidden">
-        {!geojson ? (
+        {!hasData ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 select-none">
             <MapPin className="w-12 h-12 opacity-30" />
             <p className="text-sm">Ask a question to see taxi locations on the map</p>
           </div>
         ) : (
-          <GeoHeatmapMap mapboxToken={mapboxToken} geojson={geojson} />
+          <GeoHeatmapMap
+            mapboxToken={mapboxToken}
+            geojson={geojson}
+            timelineData={timelineData}
+          />
         )}
 
         {/* Live-data badge */}
-        {latestResponse?.data && (
+        {data && (
           <div className="absolute top-4 left-4 bg-white/95 backdrop-blur rounded-lg shadow-lg px-4 py-2 z-10 pointer-events-none">
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span className="text-sm font-medium text-slate-700">
-                {latestResponse.data.taxi_count} taxis · {latestResponse.data.zone}
+                {data.taxi_count} taxis · {contextLabel}
               </span>
             </div>
           </div>

@@ -37,6 +37,19 @@ export interface TaxiData {
   snapshots?: TaxiSnapshot[];
 }
 
+// Narrowed type for timeline responses — all timeline fields are required
+export interface TimelineData {
+  type: 'timeline';
+  taxi_count: number;
+  snapshot_time: string;
+  context: TaxiQueryContext;
+  locations: GeoJSON.FeatureCollection;
+  from_time: string;
+  to_time: string;
+  window_minutes?: number;
+  snapshots: TaxiSnapshot[];
+}
+
 // ── Top-level response ───────────────────────────────────────────────────────
 
 export interface ApiResponse {
