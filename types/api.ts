@@ -59,6 +59,8 @@ export interface ApiResponse {
     execution_time_ms: number;
     llm_latency_ms: number | null;
   };
+  layer_id?: string;
+  layer_label?: string;
 }
 
 // ── Map visualisation modes (used by GeoHeatmapMap) ─────────────────────────

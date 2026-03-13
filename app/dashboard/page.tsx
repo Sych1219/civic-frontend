@@ -1,18 +1,39 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { MapPin } from 'lucide-react';
 import ChatPanel from '@/components/ChatPanel';
 import GeoHeatmapMap from '@/components/GeoHeatmapMap';
-import type { ApiResponse, TimelineData } from '@/types/api';
+import type { ApiResponse } from '@/types/api';
 
 export default function DashboardPage() {
-  const [latestResponse, setLatestResponse] = useState<ApiResponse | null>(null);
+  const [layers, setLayers] = useState<Record<string, ApiResponse>>({});
+  const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const layerCounter = useRef(0);
 
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
-  const handleDataReceived = useCallback((data: ApiResponse) => {
-    setLatestResponse(data);
+  const handleDataReceived = useCallback((response: ApiResponse) => {
+    const layerId = response.layer_id ?? `layer-${++layerCounter.current}`;
+    setLayers(prev => ({ ...prev, [layerId]: response }));
+    setVisibility(prev => (layerId in prev ? prev : { ...prev, [layerId]: true }));
+  }, []);
+
+  const handleToggle = useCallback((layerId: string) => {
+    setVisibility(prev => ({ ...prev, [layerId]: !prev[layerId] }));
+  }, []);
+
+  const handleRemove = useCallback((layerId: string) => {
+    setLayers(prev => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
+    setVisibility(prev => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
   }, []);
 
   if (!mapboxToken) {
@@ -39,13 +60,12 @@ export default function DashboardPage() {
     );
   }
 
-  const data = latestResponse?.data ?? null;
-  const isTimeline = data?.type === 'timeline';
-  const geojson = !isTimeline ? (data?.locations ?? null) : null;
-  const timelineData = isTimeline ? (data as TimelineData) : null;
-  const hasData = !!data;
+  const hasLayers = Object.keys(layers).length > 0;
 
-  const contextLabel = data?.context?.zone_name ?? data?.context?.type ?? 'area';
+  // Badge info from the most recently added layer
+  const layerEntries = Object.entries(layers);
+  const latestData = layerEntries[layerEntries.length - 1]?.[1]?.data;
+  const contextLabel = latestData?.context?.zone_name ?? latestData?.context?.road_name ?? latestData?.type ?? 'area';
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-slate-100">
@@ -59,7 +79,7 @@ export default function DashboardPage() {
 
       {/* Right Panel — Map */}
       <div className="flex-1 relative overflow-hidden">
-        {!hasData ? (
+        {!hasLayers ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 select-none">
             <MapPin className="w-12 h-12 opacity-30" />
             <p className="text-sm">Ask a question to see taxi locations on the map</p>
@@ -67,18 +87,20 @@ export default function DashboardPage() {
         ) : (
           <GeoHeatmapMap
             mapboxToken={mapboxToken}
-            geojson={geojson}
-            timelineData={timelineData}
+            layers={layers}
+            visibility={visibility}
+            onToggle={handleToggle}
+            onRemove={handleRemove}
           />
         )}
 
         {/* Live-data badge */}
-        {data && (
+        {latestData && (
           <div className="absolute top-4 left-4 bg-white/95 backdrop-blur rounded-lg shadow-lg px-4 py-2 z-10 pointer-events-none">
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span className="text-sm font-medium text-slate-700">
-                {data.taxi_count} taxis · {contextLabel}
+                {latestData.taxi_count} taxis · {contextLabel}
               </span>
             </div>
           </div>
