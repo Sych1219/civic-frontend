@@ -183,7 +183,7 @@ export default function ChartPanel({ data }: ChartPanelProps) {
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50">
                 <tr>
-                  {columns.map((col) => (
+                  {columns.map((col: string) => (
                     <th
                       key={col}
                       className="px-3 py-2 font-medium text-slate-600 whitespace-nowrap border-b border-slate-200"
@@ -194,9 +194,9 @@ export default function ChartPanel({ data }: ChartPanelProps) {
                 </tr>
               </thead>
               <tbody>
-                {records.slice(0, 20).map((row, i) => (
+                {records.slice(0, 20).map((row: Record<string, unknown>, i: number) => (
                   <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
-                    {columns.map((col) => (
+                    {columns.map((col: string) => (
                       <td
                         key={col}
                         className="px-3 py-1.5 text-slate-700 whitespace-nowrap border-b border-slate-100"

@@ -72,6 +72,31 @@ export interface ApiResponse {
   layer_label?: string;
 }
 
+// ── Chart / time-series types (used by ChartPanel) ──────────────────────────
+
+export interface ChartConfig {
+  type: 'line' | 'bar' | 'scatter';
+  title: string;
+  x_axis: string;
+  y_axis: string;
+  x_label: string;
+  y_label: string;
+}
+
+export interface SummaryStats {
+  mean: number;
+  min: number;
+  max: number;
+  std: number;
+}
+
+export interface TimeSeriesData {
+  records: Record<string, unknown>[];
+  chart_configs: ChartConfig[];
+  summary_stats?: { value: SummaryStats };
+  columns: string[];
+}
+
 // ── Map visualisation modes (used by GeoHeatmapMap) ─────────────────────────
 
 export interface VisualizationMode {
