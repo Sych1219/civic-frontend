@@ -5,12 +5,13 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Play, Pause } from 'lucide-react';
 import LayerToggle from './LayerToggle';
-import type { ApiResponse, TimelineData, VisualizationMode } from '@/types/api';
+import type { ApiResponse, TimelineData, VisualizationMode, ZoneGeometryData } from '@/types/api';
 
 interface GeoHeatmapMapProps {
   mapboxToken: string;
   layers: Record<string, ApiResponse>;
   visibility: Record<string, boolean>;
+  zoneGeometries?: Record<string, ZoneGeometryData>;
   onToggle: (layerId: string) => void;
   onRemove: (layerId: string) => void;
 }
@@ -34,6 +35,56 @@ function timelineIds(layerId: string) {
     source: `timeline-${layerId}`,
     points: `timeline-points-${layerId}`,
   };
+}
+
+function zoneBoundaryIds(layerId: string) {
+  return {
+    source: `zone-boundary-${layerId}`,
+    fill:   `zone-fill-${layerId}`,
+    line:   `zone-line-${layerId}`,
+  };
+}
+
+function addZoneBoundaryMbLayer(m: mapboxgl.Map, layerId: string, geo: ZoneGeometryData) {
+  const ids = zoneBoundaryIds(layerId);
+  const geojson: GeoJSON.Feature = { type: 'Feature', geometry: geo.geometry, properties: { name: geo.name, category: geo.category } };
+  if (!m.getSource(ids.source)) {
+    m.addSource(ids.source, { type: 'geojson', data: geojson });
+  }
+  if (geo.geometry.type === 'Polygon') {
+    if (!m.getLayer(ids.fill)) {
+      m.addLayer({
+        id: ids.fill, type: 'fill', source: ids.source,
+        paint: { 'fill-color': '#f59e0b', 'fill-opacity': 0.08 },
+      });
+    }
+    if (!m.getLayer(ids.line)) {
+      m.addLayer({
+        id: ids.line, type: 'line', source: ids.source,
+        paint: { 'line-color': '#f59e0b', 'line-width': 2, 'line-dasharray': [4, 3] },
+      });
+    }
+  } else {
+    // LineString — highway / road
+    if (!m.getLayer(ids.line)) {
+      m.addLayer({
+        id: ids.line, type: 'line', source: ids.source,
+        paint: { 'line-color': '#f59e0b', 'line-width': 3, 'line-dasharray': [6, 4] },
+      });
+    }
+  }
+}
+
+function removeZoneBoundaryMbLayer(m: mapboxgl.Map, layerId: string) {
+  const ids = zoneBoundaryIds(layerId);
+  [ids.fill, ids.line].forEach(id => { if (m.getLayer(id)) m.removeLayer(id); });
+  if (m.getSource(ids.source)) m.removeSource(ids.source);
+}
+
+function applyZoneBoundaryVisibility(m: mapboxgl.Map, layerId: string, isVisible: boolean) {
+  const ids = zoneBoundaryIds(layerId);
+  const vis = isVisible ? 'visible' : 'none';
+  [ids.fill, ids.line].forEach(id => { if (m.getLayer(id)) m.setLayoutProperty(id, 'visibility', vis); });
 }
 
 // ── Mapbox layer add / remove helpers (module-level, no hooks) ───────────────
@@ -181,12 +232,14 @@ export default function GeoHeatmapMap({
   mapboxToken,
   layers,
   visibility,
+  zoneGeometries = {},
   onToggle,
   onRemove,
 }: GeoHeatmapMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const addedLayerTypes = useRef<Map<string, 'spatial_query' | 'timeline'>>(new Map());
+  const addedBoundaries = useRef<Set<string>>(new Set());
 
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -236,6 +289,7 @@ export default function GeoHeatmapMap({
         map.current.remove();
         map.current = null;
         addedLayerTypes.current.clear();
+        addedBoundaries.current.clear();
       }
     };
   }, [mapboxToken, updateVisualizationMode]);
@@ -272,6 +326,29 @@ export default function GeoHeatmapMap({
     }
   }, [mapReady, layers]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Sync zone boundary layers when zoneGeometries changes ─────────────────
+
+  useEffect(() => {
+    if (!mapReady || !map.current) return;
+    const m = map.current;
+
+    // Remove boundaries whose layer was removed
+    for (const layerId of addedBoundaries.current) {
+      if (!zoneGeometries[layerId]) {
+        removeZoneBoundaryMbLayer(m, layerId);
+        addedBoundaries.current.delete(layerId);
+      }
+    }
+
+    // Add newly arrived boundaries
+    for (const [layerId, geo] of Object.entries(zoneGeometries)) {
+      if (addedBoundaries.current.has(layerId)) continue;
+      addZoneBoundaryMbLayer(m, layerId, geo);
+      addedBoundaries.current.add(layerId);
+      applyZoneBoundaryVisibility(m, layerId, visibility[layerId] ?? true);
+    }
+  }, [mapReady, zoneGeometries]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Sync visibility when toggled ──────────────────────────────────────────
 
   useEffect(() => {
@@ -279,6 +356,9 @@ export default function GeoHeatmapMap({
     const m = map.current;
     for (const [layerId, type] of addedLayerTypes.current) {
       applyLayerVisibility(m, layerId, type, visibility[layerId] ?? true);
+    }
+    for (const layerId of addedBoundaries.current) {
+      applyZoneBoundaryVisibility(m, layerId, visibility[layerId] ?? true);
     }
   }, [mapReady, visibility]);
 

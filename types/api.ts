@@ -50,6 +50,15 @@ export interface TimelineData {
   snapshots: TaxiSnapshot[];
 }
 
+// ── Zone geometry (boundary overlay) ─────────────────────────────────────────
+
+export interface ZoneGeometryData {
+  type: 'zone_geometry';
+  name: string;
+  category: 'district' | 'road' | 'highway';
+  geometry: GeoJSON.Polygon | GeoJSON.LineString;
+}
+
 // ── Top-level response ───────────────────────────────────────────────────────
 
 export interface ApiResponse {

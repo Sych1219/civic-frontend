@@ -4,12 +4,15 @@ import { useState, useCallback, useRef } from 'react';
 import { MapPin } from 'lucide-react';
 import ChatPanel from '@/components/ChatPanel';
 import GeoHeatmapMap from '@/components/GeoHeatmapMap';
-import type { ApiResponse } from '@/types/api';
+import type { ApiResponse, ZoneGeometryData } from '@/types/api';
 
 export default function DashboardPage() {
   const [layers, setLayers] = useState<Record<string, ApiResponse>>({});
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const [zoneGeometries, setZoneGeometries] = useState<Record<string, ZoneGeometryData>>({});
   const layerCounter = useRef(0);
+
+  const javaBackendUrl = process.env.NEXT_PUBLIC_JAVA_BACKEND_URL || 'http://localhost:8080/api/v1';
 
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
@@ -17,7 +20,20 @@ export default function DashboardPage() {
     const layerId = response.layer_id ?? `layer-${++layerCounter.current}`;
     setLayers(prev => ({ ...prev, [layerId]: response }));
     setVisibility(prev => (layerId in prev ? prev : { ...prev, [layerId]: true }));
-  }, []);
+
+    // Fetch zone boundary when context contains a zone_name
+    const ctx = response.data?.context;
+    if (ctx?.type === 'zone' && ctx.zone_name) {
+      fetch(`${javaBackendUrl}/zones/${encodeURIComponent(ctx.zone_name)}/geometry`)
+        .then(res => { if (res.ok) return res.json(); throw new Error(`${res.status}`); })
+        .then((envelope: { success: boolean; data: ZoneGeometryData }) => {
+          if (envelope.success && envelope.data) {
+            setZoneGeometries(prev => ({ ...prev, [layerId]: envelope.data }));
+          }
+        })
+        .catch(err => console.warn(`Failed to fetch zone geometry for "${ctx.zone_name}":`, err));
+    }
+  }, [javaBackendUrl]);
 
   const handleToggle = useCallback((layerId: string) => {
     setVisibility(prev => ({ ...prev, [layerId]: !prev[layerId] }));
@@ -30,6 +46,11 @@ export default function DashboardPage() {
       return next;
     });
     setVisibility(prev => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
+    setZoneGeometries(prev => {
       const next = { ...prev };
       delete next[layerId];
       return next;
@@ -89,6 +110,7 @@ export default function DashboardPage() {
             mapboxToken={mapboxToken}
             layers={layers}
             visibility={visibility}
+            zoneGeometries={zoneGeometries}
             onToggle={handleToggle}
             onRemove={handleRemove}
           />
