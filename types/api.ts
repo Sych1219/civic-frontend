@@ -28,7 +28,7 @@ export interface TaxiData {
   type: 'spatial_query' | 'timeline';
   taxi_count: number;
   snapshot_time: string;
-  context: TaxiQueryContext;
+  context: TaxiQueryContext | null;
   locations: GeoJSON.FeatureCollection;
   // timeline-specific fields
   from_time?: string;
@@ -42,7 +42,7 @@ export interface TimelineData {
   type: 'timeline';
   taxi_count: number;
   snapshot_time: string;
-  context: TaxiQueryContext;
+  context: TaxiQueryContext | null;
   locations: GeoJSON.FeatureCollection;
   from_time: string;
   to_time: string;

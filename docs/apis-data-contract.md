@@ -85,6 +85,7 @@ The `data` field is the same tagged union returned by the underlying gov-data se
     "type": "timeline",
     "from_time": "2026-02-28T08:00:00+08:00",
     "to_time": "2026-02-28T09:00:00+08:00",
+    "context": { "type": "zone", "zone_name": "cbd", "category": "district" },
     "snapshots": [
       {
         "timestamp": "2026-02-28T08:00:00+08:00",
@@ -173,6 +174,7 @@ Example:
 | `type` | `"timeline"` | Discriminator |
 | `from_time` | `str` | ISO-8601 start of the window |
 | `to_time` | `str` | ISO-8601 end of the window |
+| `context` | `QueryContext \| null` | Query parameters when a spatial filter was applied (e.g. zone); `null` when unfiltered — see [Context Union](#context-union-tagged) |
 | `window_minutes` | `number` | *(Recent-activity only)* Lookback window in minutes |
 | `snapshots` | `SnapshotEntry[]` | Ordered list of per-minute snapshots |
 
