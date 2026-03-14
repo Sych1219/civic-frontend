@@ -42,9 +42,10 @@ The dashboard is a split-panel layout: a **chat interface** on the left and a **
 3. `ChatPanel` displays `answer` as the assistant message
 4. `DashboardPage` stores the response in a `layers` record keyed by `layer_id` (falls back to a generated ID if absent)
 5. `data` (tagged union) is inspected per layer: `data.locations` for spatial queries or `data.snapshots[].locations` for timelines
-6. All active layers are passed to `GeoHeatmapMap`, each rendered on the shared map
-7. `LayerToggle` (bottom-left of map) reflects the current layer list; visibility and removal are applied immediately
-8. The visualisation panel updates without page navigation
+6. If `data.context.type === "zone"` and `zone_name` is present, `DashboardPage` fires a secondary request to fetch the zone boundary geometry from the Java backend and attaches it to the layer
+7. All active layers (including any zone boundary geometry) are passed to `GeoHeatmapMap`, each rendered on the shared map
+8. `LayerToggle` (bottom-left of map) reflects the current layer list; visibility and removal are applied immediately (boundary overlays follow their parent layer)
+9. The visualisation panel updates without page navigation
 
 ---
 
@@ -94,6 +95,46 @@ data.snapshots[]
 - Playback advances one snapshot per animation frame tick (rate configurable).
 - Dragging the slider pauses auto-play and jumps directly to the selected snapshot.
 - When the last snapshot is reached, playback stops; pressing ▶ restarts from index 0.
+
+---
+
+## Zone Boundary Overlay
+
+When a response carries a `context` with `type: "zone"` (including districts and highways), the frontend automatically fetches the zone's boundary geometry from the Java backend and renders it as an overlay on the map. This gives users a clear visual reference for where the queried zone is.
+
+### Trigger
+
+The overlay is triggered whenever `data.context` satisfies either condition:
+
+| `context.type` | Relevant fields | Example |
+|---|---|---|
+| `zone` | `zone_name`, `category: "district"` | `{ "type": "zone", "zone_name": "cbd", "category": "district" }` |
+| `zone` | `zone_name`, `category: "highway"` | `{ "type": "zone", "zone_name": "aye", "category": "highway" }` |
+
+This applies to **both** `spatial_query` and `timeline` responses — any response whose context contains a `zone_name` will trigger the boundary fetch.
+
+### Data Flow
+
+1. `DashboardPage` receives a response and inspects `data.context`
+2. If `context.type === "zone"` and `context.zone_name` is present, issue a secondary request to the Java backend: `GET /api/v1/zones/{zone_name}/geometry` (or equivalent query endpoint)
+3. The backend returns a `ZoneGeometryData` response:
+   - `category: "district"` → `geometry` is a **Polygon**
+   - `category: "highway"` → `geometry` is a **LineString**
+4. The geometry is stored alongside the layer and passed to `GeoHeatmapMap` for rendering
+
+### Map Rendering
+
+| Category | Geometry type | Style |
+|---|---|---|
+| `district` | Polygon | Dashed outline stroke (e.g. 2 px, layer colour), semi-transparent fill (≈ 0.08 opacity) |
+| `highway` | LineString | Solid or dashed line stroke (e.g. 3 px, layer colour, distinct dash pattern) |
+
+The boundary layer is tied to its parent data layer — toggling or removing a layer in `LayerToggle` also toggles/removes its boundary overlay.
+
+### Component Changes
+
+- **`DashboardPage`** — after storing a new layer, checks `data.context` for `zone_name`; if present, fetches zone geometry and attaches it to the layer record (e.g. `layers[id].zoneGeometry`)
+- **`GeoHeatmapMap`** — for each active layer with `zoneGeometry`, adds a Mapbox `fill` + `line` source/layer (district) or a `line` source/layer (highway); visibility is synchronised with the parent layer
 
 ---
 
@@ -260,6 +301,7 @@ civic-frontend/
 - **Static map view** — dynamic heatmap, zoom-based layer switching (heatmap → clusters → individual points), interactive popups
 - **Temporal map view** — taxi positions scraped through time using a slider; play/pause, manual scrubbing, per-snapshot count badge, and `from_time` / `to_time` range labels
 - **Multi-layer overlay** — each chat response adds a new named layer; layers stack on the same map
+- **Zone boundary overlay** — when the query targets a zone or highway, the boundary is fetched from the Java backend and rendered as a dashed outline (district polygon) or line (highway) on the map
 - **Layer Toggle panel** — floating bottom-left panel to show/hide or remove individual layers
 - Updates instantly from chat responses
 - Auto-refresh on a configurable interval (standalone mode)
