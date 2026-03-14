@@ -1,5 +1,10 @@
 # Civic Frontend — Design Overview
 
+> **Cross-repo docs** — when updating this file, also check:
+> - `civic-app` → `design-docs/MVP-taxi-spatial-qa.md` — `POST /api/v1/query` endpoint (§Data Flow), `{answer, data, metadata}` envelope, `data.type` discriminator (visualisation mode), `context.type` (label derivation), `layer_id`/`layer_label` fields
+> - `civic-frontend` → `docs/apis-data-contract.md` — API contract that this design implements
+> - Full index: `civic-frontend/docs/cross-repo-index.md`
+
 A chat-driven dashboard built with Next.js. The user types a natural-language query; the backend returns a plain-English answer and structured GeoJSON data; the right panel renders the appropriate visualisation — map with point clusters, heatmap, individual markers, or a temporal slider for time-series data. Multiple queries can be overlaid as independent, toggleable layers on the same map.
 
 ---
