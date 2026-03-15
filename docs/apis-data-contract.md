@@ -78,6 +78,8 @@ The `data` field is the same tagged union returned by the underlying gov-data se
 
 **Response — success (timeline query)**
 
+Timeline responses return metadata only (no geometry). Spatial data for each snapshot is fetched as Mapbox Vector Tiles from the gov-data tile endpoint (see [Snapshot Tile Endpoint](#snapshot-tile-endpoint-mvt)).
+
 ```json
 {
   "answer": "Here is the taxi activity near CBD from 08:00 to 09:00 SGT.",
@@ -87,16 +89,8 @@ The `data` field is the same tagged union returned by the underlying gov-data se
     "to_time": "2026-02-28T09:00:00+08:00",
     "context": { "type": "zone", "zone_name": "cbd", "category": "district" },
     "snapshots": [
-      {
-        "timestamp": "2026-02-28T08:00:00+08:00",
-        "taxi_count": 3200,
-        "locations": {
-          "type": "FeatureCollection",
-          "features": [
-            { "type": "Feature", "geometry": { "type": "Point", "coordinates": [103.832, 1.304] }, "properties": null }
-          ]
-        }
-      }
+      { "snapshot_id": 1001, "timestamp": "2026-02-28T08:00:00+08:00", "taxi_count": 3200 },
+      { "snapshot_id": 1002, "timestamp": "2026-02-28T08:01:00+08:00", "taxi_count": 3215 }
     ]
   },
   "metadata": {
@@ -182,9 +176,44 @@ Example:
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `snapshot_id` | `number` | Unique snapshot identifier — used to fetch MVT tiles |
 | `timestamp` | `str` | ISO-8601 timestamp of this snapshot |
-| `taxi_count` | `number` | Taxi count at this snapshot |
-| `locations` | `GeoJSON FeatureCollection` | Taxi positions at this snapshot |
+| `taxi_count` | `number` | Taxi count at this snapshot (filtered by zone when applicable) |
+
+> **Note**: `locations` (GeoJSON FeatureCollection) has been removed from `SnapshotEntry`. Spatial data is now served per-snapshot as Mapbox Vector Tiles via the gov-data tile endpoint (see below).
+
+---
+
+### Snapshot Tile Endpoint (MVT)
+
+Taxi positions for a specific snapshot are served as Mapbox Vector Tiles directly from the gov-data Java service (not through civic-app).
+
+```
+GET {JAVA_BACKEND_URL}/tiles/taxis/{snapshotId}/{z}/{x}/{y}.pbf
+```
+
+| Param | Type | Source | Description |
+|-------|------|--------|-------------|
+| `snapshotId` | `number` | path | Snapshot ID from `SnapshotEntry.snapshot_id` |
+| `z` | `number` | path | Tile zoom level (0–22) |
+| `x` | `number` | path | Tile column index |
+| `y` | `number` | path | Tile row index |
+| `zone` | `string` | query (optional) | Filter positions to a named zone |
+
+- **Response**: Binary MVT (`application/x-protobuf`)
+- **Layer name**: `taxis`
+- **Caching**: `Cache-Control: max-age=300`
+
+The `z`, `x`, `y` parameters follow the [slippy map tile](https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames) convention. Mapbox GL JS computes these automatically based on the user's viewport and zoom level — the frontend only provides the URL template:
+
+```typescript
+map.addSource('timeline-taxis', {
+  type: 'vector',
+  tiles: [`${javaBackendUrl}/tiles/taxis/${snapshotId}/{z}/{x}/{y}.pbf?zone=cbd`],
+});
+```
+
+When the user scrubs the timeline slider, the frontend swaps the tile source URL to point to the new `snapshotId`.
 
 ---
 

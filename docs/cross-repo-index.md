@@ -24,7 +24,7 @@ Zone geometry seeding           Strips {success,data,error}         Consumes {an
 
 | Doc | Purpose |
 |-----|---------|
-| `docs/design-doc.md` | System architecture, DB schema, all 9 REST endpoints, response envelope, error codes |
+| `docs/design-doc.md` | System architecture, DB schema, all 10 REST endpoints (incl. MVT tile endpoint), response envelope, error codes |
 | `docs/zone-init-design.md` | Zone table seeding (OneMap districts + OSM roads/highways), zone existence checks |
 
 ### civic-app — `/Users/sunyichun/PycharmProjects/civic-app/`
@@ -51,14 +51,15 @@ Each row is a shared concept. Columns show which doc in each repo owns or refere
 
 | Category | gov-data | civic-app | civic-frontend |
 |----------|----------|-----------|----------------|
-| **Endpoint URLs (gov-data)** — 9 spatial REST paths under `/api/v1/taxis/` | `design-doc.md` §4.1–4.10 (defines) | `MVP` §3 (endpoint column), §6.3 (STEP ORDER in system prompt), §7.1 (endpoint table), §7.2 (ReAct trace) | — (never calls gov-data directly) |
+| **Endpoint URLs (gov-data)** — 9 JSON REST paths under `/api/v1/taxis/` + 1 MVT tile path under `/api/v1/tiles/` | `design-doc.md` §4.1–4.10 (defines) | `MVP` §3 (endpoint column), §7.1 (endpoint table), §7.2 (ReAct trace) | `api-contract.md` §Snapshot Tile Endpoint (documents MVT tile URL from gov-data) |
 | **Endpoint URL (civic-app)** — `POST /api/v1/query` | — | `MVP` §8 (defines) | `api-contract.md` §Endpoints (documents), `design.md` §Data Flow step 1 |
 | **Endpoint query params** — `lat`, `lon`, `radius`, `limit`, `datetime`, `start`, `end`, `zone`, `buffer_m` | `design-doc.md` §4.1–4.9 (defines param tables) | `MVP` §6.3 (UNITS conversion in system prompt), §7.1 (key-params column) | `api-contract.md` §Context Union (params echoed in `context` fields) |
 | **`data.type` tagged union** — `spatial_query`, `timeline`, `zone_geometry` | `design-doc.md` §4.0 (defines) | `MVP` §7.1 (documents passthrough) | `api-contract.md` §Data Union (documents), `design.md` §Visualisation Mode (drives rendering) |
 | **`context.type` union** — `radius`, `nearest`, `zone`, `polygon`, `road`, `route` | `design-doc.md` §4.0 (defines) | `MVP` §7.1 (documents) | `api-contract.md` §Context Union (documents), `design.md` §Layer Toggle (label derivation) |
 | **Response envelope (gov-data)** — `{success, data, error}` | `design-doc.md` §4.0 (defines) | `MVP` §7.1 (agent navigates to `data.*`; Python strips envelope) | — (never sees this envelope) |
 | **Response envelope (civic-app)** — `{answer, data, metadata}` | — | `MVP` §8 (defines) | `api-contract.md` §QueryResponse (documents), `design.md` §Data Flow / §API Contract (consumes) |
-| **Data model shapes** — `SpatialQueryData`, `TimelineData`, `ZoneGeometryData`, `SnapshotEntry` | `design-doc.md` §4.1–4.9 (defines) | `MVP` §7.1 (documents `data` shape) | `api-contract.md` §Models (documents), `design.md` §Visualisation Mode (renders) |
+| **Data model shapes** — `SpatialQueryData`, `TimelineData`, `ZoneGeometryData`, `SnapshotEntry` | `design-doc.md` §4.1–4.9 (defines); `SnapshotEntry` now carries `snapshot_id` instead of `locations` | `MVP` §7.1 (documents `data` shape) | `api-contract.md` §Models (documents), `design.md` §Visualisation Mode (renders) |
+| **MVT tile endpoint** — `GET /tiles/taxis/{snapshotId}/{z}/{x}/{y}.pbf?zone=` | `design-doc.md` §4.7.2 (defines) | `MVP` §7.1 (references) | `api-contract.md` §Snapshot Tile Endpoint (documents); frontend calls gov-data directly for tiles |
 | **Zone names & categories** — `district`, `road`, `highway` | `zone-init.md` §4 (defines catalog + seeding) | `MVP` §6.3 (PLANNING AREAS list in system prompt) | `api-contract.md` §ZoneGeometryData (`category` enum) |
 | **Error codes** — `UPSTREAM_ERROR`, `NOT_FOUND`, `VALIDATION_ERROR`, `BAD_REQUEST` | `design-doc.md` §8 (defines) | `MVP` §8 (maps/passes through) | `api-contract.md` §Error Handling (documents) |
 | **GeoJSON structures** — FeatureCollection, Point, Polygon, LineString, `properties` | `design-doc.md` §4.1–4.9 (defines in responses) | — (passthrough, no doc) | `api-contract.md` §GeoJSON Types (documents), `design.md` / `GeoHeatmapMap.tsx` (renders) |
