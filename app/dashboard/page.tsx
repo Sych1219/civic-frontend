@@ -22,7 +22,8 @@ export default function DashboardPage() {
     setVisibility(prev => (layerId in prev ? prev : { ...prev, [layerId]: true }));
 
     // Fetch zone boundary when context contains a zone_name
-    const ctx = response.data?.context;
+    const d = response.data;
+    const ctx = (d?.type === 'spatial_query' || d?.type === 'timeline') ? d.context : null;
     if (ctx?.type === 'zone' && ctx.zone_name) {
       fetch(`${javaBackendUrl}/zones/${encodeURIComponent(ctx.zone_name)}/geometry`)
         .then(res => { if (res.ok) return res.json(); throw new Error(`${res.status}`); })
@@ -86,7 +87,9 @@ export default function DashboardPage() {
   // Badge info from the most recently added layer
   const layerEntries = Object.entries(layers);
   const latestData = layerEntries[layerEntries.length - 1]?.[1]?.data;
-  const contextLabel = latestData?.context?.zone_name ?? latestData?.context?.road_name ?? latestData?.type ?? 'area';
+  const latestCtx = (latestData?.type === 'spatial_query' || latestData?.type === 'timeline') ? latestData.context : null;
+  const contextLabel = latestCtx?.zone_name ?? latestCtx?.road_name ?? latestData?.type ?? 'area';
+  const latestTaxiCount = latestData?.type === 'spatial_query' ? latestData.taxi_count : null;
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-slate-100">
@@ -108,6 +111,7 @@ export default function DashboardPage() {
         ) : (
           <GeoHeatmapMap
             mapboxToken={mapboxToken}
+            javaBackendUrl={javaBackendUrl}
             layers={layers}
             visibility={visibility}
             zoneGeometries={zoneGeometries}
@@ -122,7 +126,7 @@ export default function DashboardPage() {
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
               <span className="text-sm font-medium text-slate-700">
-                {latestData.taxi_count} taxis · {contextLabel}
+                {latestTaxiCount !== null ? `${latestTaxiCount} taxis · ` : ''}{contextLabel}
               </span>
             </div>
           </div>

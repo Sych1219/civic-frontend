@@ -184,36 +184,51 @@ Example:
 
 ---
 
-### Snapshot Tile Endpoint (MVT)
+### Batched Timeline Tile Endpoint (MVT)
 
-Taxi positions for a specific snapshot are served as Mapbox Vector Tiles directly from the gov-data Java service (not through civic-app).
+Taxi positions for an entire timeline are served as a **single** batched Mapbox Vector Tile directly from the gov-data Java service (not through civic-app). Each feature carries a `snapshot_id` property, allowing the frontend to switch frames instantly via a Mapbox `filter` expression — **no per-frame network request**.
 
 ```
-GET {JAVA_BACKEND_URL}/tiles/taxis/{snapshotId}/{z}/{x}/{y}.pbf
+GET {JAVA_BACKEND_URL}/tiles/taxis/timeline/{z}/{x}/{y}.pbf
 ```
 
 | Param | Type | Source | Description |
 |-------|------|--------|-------------|
-| `snapshotId` | `number` | path | Snapshot ID from `SnapshotEntry.snapshot_id` |
 | `z` | `number` | path | Tile zoom level (0–22) |
 | `x` | `number` | path | Tile column index |
 | `y` | `number` | path | Tile row index |
+| `snapshots` | `string` | query (**required**) | Comma-separated snapshot IDs (e.g. `7184,7194,7204`) |
 | `zone` | `string` | query (optional) | Filter positions to a named zone |
 
 - **Response**: Binary MVT (`application/x-protobuf`)
 - **Layer name**: `taxis`
+- **MVT feature properties**: `snapshot_id` (long) — identifies which snapshot the position belongs to
 - **Caching**: `Cache-Control: max-age=300`
 
 The `z`, `x`, `y` parameters follow the [slippy map tile](https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames) convention. Mapbox GL JS computes these automatically based on the user's viewport and zoom level — the frontend only provides the URL template:
 
 ```typescript
+// Build comma-separated snapshot IDs from timeline metadata
+const ids = snapshots.map(s => s.snapshot_id).join(',');
+
+// Add source once — contains ALL snapshots
 map.addSource('timeline-taxis', {
   type: 'vector',
-  tiles: [`${javaBackendUrl}/tiles/taxis/${snapshotId}/{z}/{x}/{y}.pbf?zone=cbd`],
+  tiles: [`${javaBackendUrl}/tiles/taxis/timeline/{z}/{x}/{y}.pbf?snapshots=${ids}&zone=cbd`],
 });
-```
 
-When the user scrubs the timeline slider, the frontend swaps the tile source URL to point to the new `snapshotId`.
+map.addLayer({
+  id: 'taxi-points',
+  type: 'circle',
+  source: 'timeline-taxis',
+  'source-layer': 'taxis',
+  filter: ['==', ['get', 'snapshot_id'], snapshots[0].snapshot_id],
+  paint: { 'circle-color': '#11b4da', 'circle-radius': 6 },
+});
+
+// On playback tick — instant, no network request:
+map.setFilter('taxi-points', ['==', ['get', 'snapshot_id'], currentSnapshotId]);
+```
 
 ---
 

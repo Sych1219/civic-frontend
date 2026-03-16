@@ -42,7 +42,7 @@ The dashboard is a split-panel layout: a **chat interface** on the left and a **
 3. `ChatPanel` displays `answer` as the assistant message
 4. `DashboardPage` stores the response in a `layers` record keyed by `layer_id` (falls back to a generated ID if absent)
 5. `data` (tagged union) is inspected per layer: `data.locations` for spatial queries; for timelines, `data.snapshots[]` provides metadata only (no geometry — positions are fetched as MVT tiles)
-6. If `data.type === "timeline"`, `DashboardPage` stores the snapshot metadata and configures a Mapbox vector tile source pointing at the Java backend's tile endpoint (`GET /tiles/taxis/{snapshotId}/{z}/{x}/{y}.pbf`). When the user scrubs the slider, the tile source URL is swapped to the new `snapshotId`.
+6. If `data.type === "timeline"`, `DashboardPage` stores the snapshot metadata and configures a Mapbox vector tile source pointing at the Java backend's batched tile endpoint (`GET /tiles/taxis/timeline/{z}/{x}/{y}.pbf?snapshots={ids}`). All snapshot IDs are passed in a single request; playback switches frames via a `filter` expression (no per-frame network request).
 7. If `data.context.type === "zone"` and `zone_name` is present, `DashboardPage` fires a secondary request to fetch the zone boundary geometry from the Java backend and attaches it to the layer. For timeline tile requests, the `zone` query parameter is also passed to filter positions spatially.
 8. All active layers (including any zone boundary geometry) are passed to `GeoHeatmapMap`, each rendered on the shared map
 9. `LayerToggle` (bottom-left of map) reflects the current layer list; visibility and removal are applied immediately (boundary overlays follow their parent layer)
@@ -70,36 +70,51 @@ Automatically switches layers based on zoom level:
 
 `data.type = "timeline"`
 
-When the response carries a `timeline` payload, `GeoHeatmapMap` switches into **temporal mode**: the heatmap/cluster layers are hidden and a **time slider panel** appears below the map. The slider scrubs through `data.snapshots[]`; on each tick, the Mapbox vector tile source URL is swapped to point to the current snapshot's tile endpoint, so taxi positions update per-snapshot.
+When the response carries a `timeline` payload, `GeoHeatmapMap` switches into **temporal mode**: the heatmap/cluster layers are hidden and a **time slider panel** appears below the map. The slider scrubs through `data.snapshots[]`; on each tick, the visible snapshot is switched instantly via a Mapbox `filter` expression — no network request per frame.
 
 #### Data shape consumed
 
 ```
 data.snapshots[]
-  .snapshot_id → used to construct the MVT tile URL for this snapshot
+  .snapshot_id → used in the Mapbox filter expression to show/hide features per frame
   .timestamp   → displayed in the slider timestamp label
   .taxi_count  → shown in the snapshot count badge
 ```
 
-#### MVT tile source
+#### MVT tile source (batched)
 
-Instead of embedding GeoJSON `locations` in each snapshot, the frontend fetches spatial data as Mapbox Vector Tiles directly from the Java backend:
+Instead of fetching one tile per snapshot (which caused stuttery playback due to network latency), all snapshots are batched into a **single** MVT tile request. Each feature carries a `snapshot_id` property; the frontend switches frames by changing the Mapbox `filter` — **zero network latency per frame**.
 
 ```
-GET {JAVA_BACKEND_URL}/tiles/taxis/{snapshotId}/{z}/{x}/{y}.pbf?zone={zone}
+GET {JAVA_BACKEND_URL}/tiles/taxis/timeline/{z}/{x}/{y}.pbf?snapshots={ids}&zone={zone}
 ```
 
-Mapbox GL JS automatically computes `z`, `x`, `y` from the current viewport. When the user scrubs to a new snapshot, the tile source URL is updated:
+Mapbox GL JS automatically computes `z`, `x`, `y` from the current viewport. The source is added **once** when the timeline layer is created:
 
 ```typescript
-map.removeSource('timeline-taxis');
+const ids = snapshots.map(s => s.snapshot_id).join(',');
+
 map.addSource('timeline-taxis', {
   type: 'vector',
-  tiles: [`${javaBackendUrl}/tiles/taxis/${snapshot.snapshot_id}/{z}/{x}/{y}.pbf?zone=${zone}`],
+  tiles: [`${javaBackendUrl}/tiles/taxis/timeline/{z}/{x}/{y}.pbf?snapshots=${ids}&zone=${zone}`],
+});
+
+map.addLayer({
+  id: 'taxi-points',
+  type: 'circle',
+  source: 'timeline-taxis',
+  'source-layer': 'taxis',
+  filter: ['==', ['get', 'snapshot_id'], snapshots[0].snapshot_id],
+  paint: { 'circle-color': '#11b4da', 'circle-radius': 6 },
 });
 ```
 
-Adjacent snapshots can be prefetched for smooth playback. Tiles are cached by the browser via `Cache-Control: max-age=300`.
+On playback tick or slider scrub — instant frame switch:
+```typescript
+map.setFilter('taxi-points', ['==', ['get', 'snapshot_id'], currentSnapshotId]);
+```
+
+Tiles are cached by the browser via `Cache-Control: max-age=300`.
 
 #### Time slider panel
 
@@ -214,7 +229,7 @@ Renders GeoJSON point data on a Mapbox map. Branches on `data.type`:
 |---|---|
 | `snapshotIndex` | Current position in `timelineData.snapshots[]` |
 | `isPlaying` | Whether auto-advance is active |
-| Active source | Mapbox vector tile source; URL swapped to `tiles/taxis/{snapshots[snapshotIndex].snapshot_id}/{z}/{x}/{y}.pbf` on each index change |
+| Active source | Mapbox vector tile source loaded once with all snapshot IDs; on each index change, `map.setFilter()` switches the visible `snapshot_id` — no URL swap |
 
 ### Layer Toggle (`components/LayerToggle.tsx`)
 
@@ -253,7 +268,7 @@ The visualisation panel is data-driven by the backend response fields:
 | `answer` | Displayed as the assistant chat message |
 | `data.type` | Discriminator — `"spatial_query"`, `"timeline"`, or `"zone_geometry"` |
 | `data.locations` | GeoJSON FeatureCollection rendered on the map *(spatial_query)* |
-| `data.snapshots[].snapshot_id` | Used to construct MVT tile URL for each snapshot *(timeline)* |
+| `data.snapshots[].snapshot_id` | All IDs joined into the batched tile URL; used in Mapbox `filter` to switch visible frame during playback *(timeline)* |
 | `data.taxi_count` | Shown in the chat message summary *(spatial_query)* |
 | `data.snapshot_time` | Shown as the data timestamp *(spatial_query)* |
 | `data.context` | Query parameters (zone name, radius, etc.) for map title / context label |
@@ -320,7 +335,7 @@ civic-frontend/
 ### Visualisation Panel (Right Panel)
 
 - **Static map view** — dynamic heatmap, zoom-based layer switching (heatmap → clusters → individual points), interactive popups
-- **Temporal map view** — taxi positions scrubbed through time using a slider; positions loaded as MVT tiles per snapshot (not GeoJSON); play/pause, manual scrubbing, per-snapshot count badge, and `from_time` / `to_time` range labels
+- **Temporal map view** — taxi positions scrubbed through time using a slider; all snapshots loaded as a single batched MVT tile (features tagged with `snapshot_id`); playback switches frames via Mapbox `filter` (instant, no network request per frame); play/pause, manual scrubbing, per-snapshot count badge, and `from_time` / `to_time` range labels
 - **Multi-layer overlay** — each chat response adds a new named layer; layers stack on the same map
 - **Zone boundary overlay** — when the query targets a zone or highway, the boundary is fetched from the Java backend and rendered as a dashed outline (district polygon) or line (highway) on the map
 - **Layer Toggle panel** — floating bottom-left panel to show/hide or remove individual layers

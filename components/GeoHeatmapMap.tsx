@@ -5,10 +5,11 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Play, Pause } from 'lucide-react';
 import LayerToggle from './LayerToggle';
-import type { ApiResponse, TimelineData, VisualizationMode, ZoneGeometryData } from '@/types/api';
+import type { ApiResponse, SpatialQueryData, TimelineData, VisualizationMode, ZoneGeometryData } from '@/types/api';
 
 interface GeoHeatmapMapProps {
   mapboxToken: string;
+  javaBackendUrl: string;
   layers: Record<string, ApiResponse>;
   visibility: Record<string, boolean>;
   zoneGeometries?: Record<string, ZoneGeometryData>;
@@ -165,29 +166,54 @@ function removeSpatialMbLayer(m: mapboxgl.Map, layerId: string) {
   if (m.getSource(ids.source)) m.removeSource(ids.source);
 }
 
-function addTimelineMbLayer(m: mapboxgl.Map, layerId: string, initialData: GeoJSON.FeatureCollection) {
+// ── Timeline MVT helpers ──────────────────────────────────────────────────────
+
+function buildTileUrl(javaBackendUrl: string, snapshotId: number, zone?: string): string {
+  const base = `${javaBackendUrl}/tiles/taxis/${snapshotId}/{z}/{x}/{y}.pbf`;
+  return zone ? `${base}?zone=${encodeURIComponent(zone)}` : base;
+}
+
+function addTimelineMbLayer(
+  m: mapboxgl.Map,
+  layerId: string,
+  snapshotId: number,
+  javaBackendUrl: string,
+  zone?: string,
+) {
   const ids = timelineIds(layerId);
   if (!m.getSource(ids.source)) {
-    m.addSource(ids.source, { type: 'geojson', data: initialData });
+    m.addSource(ids.source, {
+      type: 'vector',
+      tiles: [buildTileUrl(javaBackendUrl, snapshotId, zone)],
+    });
   }
   if (!m.getLayer(ids.points)) {
     m.addLayer({
-      id: ids.points, type: 'circle', source: ids.source,
+      id: ids.points, type: 'circle', source: ids.source, 'source-layer': 'taxis',
       paint: {
         'circle-color': '#11b4da', 'circle-radius': 6,
         'circle-stroke-width': 1, 'circle-stroke-color': '#fff', 'circle-opacity': 0.9,
       },
     });
   }
-  m.on('click', ids.points, (e) => {
-    if (!e.features?.length) return;
-    const coords = (e.features[0].geometry as GeoJSON.Point).coordinates.slice() as [number, number];
-    new mapboxgl.Popup().setLngLat(coords).setHTML(
-      `<div style="padding:8px;"><p style="margin:0;font-size:11px;color:#999;">Lat: ${coords[1].toFixed(5)}, Lng: ${coords[0].toFixed(5)}</p></div>`
-    ).addTo(m);
-  });
-  m.on('mouseenter', ids.points, () => { m.getCanvas().style.cursor = 'pointer'; });
-  m.on('mouseleave', ids.points, () => { m.getCanvas().style.cursor = ''; });
+}
+
+function updateTimelineTileSource(
+  m: mapboxgl.Map,
+  layerId: string,
+  snapshotId: number,
+  javaBackendUrl: string,
+  zone?: string,
+) {
+  const ids = timelineIds(layerId);
+  const source = m.getSource(ids.source) as mapboxgl.VectorTileSource | undefined;
+  if (source) {
+    // Swap tile URL in-place — avoids aborting in-flight requests
+    source.setTiles([buildTileUrl(javaBackendUrl, snapshotId, zone)]);
+  } else {
+    // Source doesn't exist yet — create it with the layer
+    addTimelineMbLayer(m, layerId, snapshotId, javaBackendUrl, zone);
+  }
 }
 
 function removeTimelineMbLayer(m: mapboxgl.Map, layerId: string) {
@@ -230,6 +256,7 @@ function formatHHMM(iso: string): string {
 
 export default function GeoHeatmapMap({
   mapboxToken,
+  javaBackendUrl,
   layers,
   visibility,
   zoneGeometries = {},
@@ -248,7 +275,6 @@ export default function GeoHeatmapMap({
   // Timeline state — driven by the first visible timeline layer
   const [snapshotIndex, setSnapshotIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const timelineEntry = Object.entries(layers).find(
     ([id, r]) => r.data?.type === 'timeline' && (visibility[id] ?? true),
@@ -314,11 +340,15 @@ export default function GeoHeatmapMap({
       if (addedLayerTypes.current.has(layerId) || !response.data) continue;
       const type = response.data.type;
       if (type === 'spatial_query') {
-        addSpatialMbLayer(m, layerId, response.data.locations);
+        addSpatialMbLayer(m, layerId, (response.data as SpatialQueryData).locations);
         addedLayerTypes.current.set(layerId, 'spatial_query');
-      } else if (type === 'timeline' && response.data.snapshots?.[0]) {
-        addTimelineMbLayer(m, layerId, response.data.snapshots[0].locations);
-        addedLayerTypes.current.set(layerId, 'timeline');
+      } else if (type === 'timeline') {
+        const tl = response.data as TimelineData;
+        if (tl.snapshots[0]) {
+          const zone = tl.context?.type === 'zone' ? tl.context.zone_name : undefined;
+          addTimelineMbLayer(m, layerId, tl.snapshots[0].snapshot_id, javaBackendUrl, zone);
+          addedLayerTypes.current.set(layerId, 'timeline');
+        }
       }
       if (addedLayerTypes.current.has(layerId)) {
         applyLayerVisibility(m, layerId, type as 'spatial_query' | 'timeline', visibility[layerId] ?? true);
@@ -369,30 +399,55 @@ export default function GeoHeatmapMap({
     setIsPlaying(false);
   }, [activeTimelineId]);
 
-  // ── Timeline: push snapshot data to Mapbox source ────────────────────────
+  // ── Timeline: swap tile source URL on snapshot change ────────────────────
 
   useEffect(() => {
     if (!mapReady || !map.current || !activeTimelineId || !timelineData) return;
     const snapshot = timelineData.snapshots[snapshotIndex];
     if (!snapshot) return;
-    const src = map.current.getSource(timelineIds(activeTimelineId).source) as mapboxgl.GeoJSONSource | undefined;
-    if (src) src.setData(snapshot.locations);
-  }, [mapReady, snapshotIndex, activeTimelineId, timelineData]);
+    const zone = timelineData.context?.type === 'zone' ? timelineData.context.zone_name : undefined;
+    updateTimelineTileSource(map.current, activeTimelineId, snapshot.snapshot_id, javaBackendUrl, zone);
+  }, [mapReady, snapshotIndex, activeTimelineId, timelineData, javaBackendUrl]);
 
-  // ── Timeline: playback interval ───────────────────────────────────────────
+  // ── Timeline: playback — wait for tiles to load before advancing ─────────
 
   useEffect(() => {
-    if (playIntervalRef.current) clearInterval(playIntervalRef.current);
-    if (isPlaying && snapshots.length > 0) {
-      playIntervalRef.current = setInterval(() => {
-        setSnapshotIndex(prev => {
-          if (prev >= snapshots.length - 1) { setIsPlaying(false); return prev; }
-          return prev + 1;
-        });
-      }, PLAYBACK_INTERVAL_MS);
+    if (!isPlaying || !map.current || !activeTimelineId || snapshots.length === 0) return;
+
+    const m = map.current;
+    const sourceId = timelineIds(activeTimelineId).source;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let advanced = false;
+
+    const advance = () => {
+      if (advanced) return;
+      advanced = true;
+      setSnapshotIndex(prev => {
+        if (prev >= snapshots.length - 1) { setIsPlaying(false); return prev; }
+        return prev + 1;
+      });
+    };
+
+    const onSourceData = (e: mapboxgl.MapSourceDataEvent) => {
+      if (e.sourceId === sourceId && m.isSourceLoaded(sourceId)) {
+        m.off('sourcedata', onSourceData);
+        timerId = setTimeout(advance, PLAYBACK_INTERVAL_MS);
+      }
+    };
+
+    // Check if tiles are already loaded; otherwise wait for sourcedata event
+    if (m.isSourceLoaded(sourceId)) {
+      timerId = setTimeout(advance, PLAYBACK_INTERVAL_MS);
+    } else {
+      m.on('sourcedata', onSourceData);
     }
-    return () => { if (playIntervalRef.current) clearInterval(playIntervalRef.current); };
-  }, [isPlaying, snapshots.length]);
+
+    return () => {
+      advanced = true;
+      if (timerId) clearTimeout(timerId);
+      m.off('sourcedata', onSourceData);
+    };
+  }, [isPlaying, snapshotIndex, activeTimelineId, snapshots.length]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
