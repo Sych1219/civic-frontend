@@ -130,10 +130,17 @@ export default function ChatPanel({
               >
                 {message.timestamp.toLocaleTimeString()}
               </p>
-              {message.data?.data && (
+              {message.data?.data?.type === 'spatial_query' && (
                 <div className="mt-2 pt-2 border-t border-slate-200">
                   <span className="text-xs text-slate-500">
                     {message.data.data.taxi_count} taxis in {message.data.data.context?.zone_name ?? message.data.data.context?.type ?? 'area'}
+                  </span>
+                </div>
+              )}
+              {message.data?.data?.type === 'timeline' && (
+                <div className="mt-2 pt-2 border-t border-slate-200">
+                  <span className="text-xs text-slate-500">
+                    {message.data.data.snapshots.length} snapshots · {message.data.data.context?.zone_name ?? message.data.data.context?.type ?? 'area'}
                   </span>
                 </div>
               )}

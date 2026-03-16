@@ -40,7 +40,8 @@ export default function LayerToggle({
       <ul className="py-1">
         {layerIds.map((id, idx) => {
           const layer = layers[id];
-          const label = layer.layer_label ?? id;
+          const ctx = (layer.data?.type === 'spatial_query' || layer.data?.type === 'timeline') ? layer.data.context : null;
+          const label = layer.layer_label ?? ctx?.zone_name ?? ctx?.road_name ?? layer.data?.type ?? id;
           const isVisible = visibility[id] ?? true;
           const colour = LAYER_COLOURS[idx % LAYER_COLOURS.length];
 

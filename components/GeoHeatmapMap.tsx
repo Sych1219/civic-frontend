@@ -166,17 +166,24 @@ function removeSpatialMbLayer(m: mapboxgl.Map, layerId: string) {
   if (m.getSource(ids.source)) m.removeSource(ids.source);
 }
 
-// ── Timeline MVT helpers ──────────────────────────────────────────────────────
+// ── Timeline MVT helpers (batched — all snapshots in a single tile request) ──
 
-function buildTileUrl(javaBackendUrl: string, snapshotId: number, zone?: string): string {
-  const base = `${javaBackendUrl}/tiles/taxis/${snapshotId}/{z}/{x}/{y}.pbf`;
-  return zone ? `${base}?zone=${encodeURIComponent(zone)}` : base;
+function buildBatchedTileUrl(
+  javaBackendUrl: string,
+  snapshotIds: number[],
+  zone?: string,
+): string {
+  const ids = snapshotIds.join(',');
+  let url = `${javaBackendUrl}/tiles/taxis/timeline/{z}/{x}/{y}.pbf?snapshots=${ids}`;
+  if (zone) url += `&zone=${encodeURIComponent(zone)}`;
+  return url;
 }
 
 function addTimelineMbLayer(
   m: mapboxgl.Map,
   layerId: string,
-  snapshotId: number,
+  snapshotIds: number[],
+  initialSnapshotId: number,
   javaBackendUrl: string,
   zone?: string,
 ) {
@@ -184,12 +191,13 @@ function addTimelineMbLayer(
   if (!m.getSource(ids.source)) {
     m.addSource(ids.source, {
       type: 'vector',
-      tiles: [buildTileUrl(javaBackendUrl, snapshotId, zone)],
+      tiles: [buildBatchedTileUrl(javaBackendUrl, snapshotIds, zone)],
     });
   }
   if (!m.getLayer(ids.points)) {
     m.addLayer({
       id: ids.points, type: 'circle', source: ids.source, 'source-layer': 'taxis',
+      filter: ['==', ['get', 'snapshot_id'], initialSnapshotId],
       paint: {
         'circle-color': '#11b4da', 'circle-radius': 6,
         'circle-stroke-width': 1, 'circle-stroke-color': '#fff', 'circle-opacity': 0.9,
@@ -198,21 +206,14 @@ function addTimelineMbLayer(
   }
 }
 
-function updateTimelineTileSource(
+function setTimelineSnapshotFilter(
   m: mapboxgl.Map,
   layerId: string,
   snapshotId: number,
-  javaBackendUrl: string,
-  zone?: string,
 ) {
   const ids = timelineIds(layerId);
-  const source = m.getSource(ids.source) as mapboxgl.VectorTileSource | undefined;
-  if (source) {
-    // Swap tile URL in-place — avoids aborting in-flight requests
-    source.setTiles([buildTileUrl(javaBackendUrl, snapshotId, zone)]);
-  } else {
-    // Source doesn't exist yet — create it with the layer
-    addTimelineMbLayer(m, layerId, snapshotId, javaBackendUrl, zone);
+  if (m.getLayer(ids.points)) {
+    m.setFilter(ids.points, ['==', ['get', 'snapshot_id'], snapshotId]);
   }
 }
 
@@ -344,9 +345,10 @@ export default function GeoHeatmapMap({
         addedLayerTypes.current.set(layerId, 'spatial_query');
       } else if (type === 'timeline') {
         const tl = response.data as TimelineData;
-        if (tl.snapshots[0]) {
+        if (tl.snapshots.length > 0) {
           const zone = tl.context?.type === 'zone' ? tl.context.zone_name : undefined;
-          addTimelineMbLayer(m, layerId, tl.snapshots[0].snapshot_id, javaBackendUrl, zone);
+          const allIds = tl.snapshots.map(s => s.snapshot_id);
+          addTimelineMbLayer(m, layerId, allIds, allIds[0], javaBackendUrl, zone);
           addedLayerTypes.current.set(layerId, 'timeline');
         }
       }
@@ -399,55 +401,29 @@ export default function GeoHeatmapMap({
     setIsPlaying(false);
   }, [activeTimelineId]);
 
-  // ── Timeline: swap tile source URL on snapshot change ────────────────────
+  // ── Timeline: switch visible snapshot via filter expression ─────────────
 
   useEffect(() => {
     if (!mapReady || !map.current || !activeTimelineId || !timelineData) return;
     const snapshot = timelineData.snapshots[snapshotIndex];
     if (!snapshot) return;
-    const zone = timelineData.context?.type === 'zone' ? timelineData.context.zone_name : undefined;
-    updateTimelineTileSource(map.current, activeTimelineId, snapshot.snapshot_id, javaBackendUrl, zone);
-  }, [mapReady, snapshotIndex, activeTimelineId, timelineData, javaBackendUrl]);
+    setTimelineSnapshotFilter(map.current, activeTimelineId, snapshot.snapshot_id);
+  }, [mapReady, snapshotIndex, activeTimelineId, timelineData]);
 
-  // ── Timeline: playback — wait for tiles to load before advancing ─────────
+  // ── Timeline: playback — advance one snapshot per tick (instant filter) ──
 
   useEffect(() => {
-    if (!isPlaying || !map.current || !activeTimelineId || snapshots.length === 0) return;
+    if (!isPlaying || snapshots.length === 0) return;
 
-    const m = map.current;
-    const sourceId = timelineIds(activeTimelineId).source;
-    let timerId: ReturnType<typeof setTimeout> | null = null;
-    let advanced = false;
-
-    const advance = () => {
-      if (advanced) return;
-      advanced = true;
+    const timerId = setTimeout(() => {
       setSnapshotIndex(prev => {
         if (prev >= snapshots.length - 1) { setIsPlaying(false); return prev; }
         return prev + 1;
       });
-    };
+    }, PLAYBACK_INTERVAL_MS);
 
-    const onSourceData = (e: mapboxgl.MapSourceDataEvent) => {
-      if (e.sourceId === sourceId && m.isSourceLoaded(sourceId)) {
-        m.off('sourcedata', onSourceData);
-        timerId = setTimeout(advance, PLAYBACK_INTERVAL_MS);
-      }
-    };
-
-    // Check if tiles are already loaded; otherwise wait for sourcedata event
-    if (m.isSourceLoaded(sourceId)) {
-      timerId = setTimeout(advance, PLAYBACK_INTERVAL_MS);
-    } else {
-      m.on('sourcedata', onSourceData);
-    }
-
-    return () => {
-      advanced = true;
-      if (timerId) clearTimeout(timerId);
-      m.off('sourcedata', onSourceData);
-    };
-  }, [isPlaying, snapshotIndex, activeTimelineId, snapshots.length]);
+    return () => clearTimeout(timerId);
+  }, [isPlaying, snapshotIndex, snapshots.length]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 

@@ -61,7 +61,6 @@ export interface ApiResponse {
   data: SpatialQueryData | TimelineData | ZoneGeometryData | null;
   metadata: {
     execution_time_ms: number;
-    llm_latency_ms: number | null;
   };
   layer_id?: string;
   layer_label?: string;
