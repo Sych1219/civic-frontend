@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { SendHorizontal, Loader2, BarChart2 } from 'lucide-react';
-import type { ApiResponse, MapData, TimeSeriesData } from '@/types/api';
+import { SendHorizontal, Loader2, MapPin } from 'lucide-react';
+import type { ApiResponse } from '@/types/api';
 
 interface Message {
   id: string;
@@ -17,21 +17,20 @@ interface ChatPanelProps {
   backendUrl?: string;
 }
 
-export default function ChatPanel({ 
-  onDataReceived, 
-  backendUrl = 'http://localhost:8000/api/query' 
+export default function ChatPanel({
+  onDataReceived,
+  backendUrl = 'http://localhost:8000/api/v1/query'
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
       role: 'assistant',
-      content: 'Hello! I can help you explore urban and environmental data for Singapore. Try asking about air temperature, taxi availability, or PM2.5 readings.',
+      content: 'Hello! I can help you find taxi availability in Singapore. Try asking about taxis in a specific area.',
       timestamp: new Date()
     }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sessionId] = useState(`session-${Date.now()}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -60,14 +59,8 @@ export default function ChatPanel({
     try {
       const response = await fetch(backendUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: userMessage.content,
-          session_id: sessionId,
-          context: {}
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: userMessage.content }),
       });
 
       if (!response.ok) {
@@ -76,68 +69,27 @@ export default function ChatPanel({
 
       const data: ApiResponse = await response.json();
 
-      // Create assistant message
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: generateResponseMessage(data),
+        content: data.answer,
         timestamp: new Date(),
-        data: data
+        data,
       };
 
       setMessages(prev => [...prev, assistantMessage]);
-
-      // Forward to visualisation panel for all non-error responses
       onDataReceived(data);
 
     } catch (error) {
-      console.error('Error querying backend:', error);
-      
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: `Sorry, I couldn't fetch the data. ${error instanceof Error ? error.message : 'Please try again.'}`,
         timestamp: new Date()
       };
-
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const generateResponseMessage = (data: ApiResponse): string => {
-    if (data.status !== 'success' || data.visualization_type === 'error') {
-      return data.error || 'Something went wrong. Please try again.';
-    }
-
-    switch (data.visualization_type) {
-      case 'map':
-      case 'map_temporal': {
-        const mapData = data.data as MapData;
-        const temporal = mapData.temporal;
-        return [
-          `Showing ${mapData.features_count} station${mapData.features_count !== 1 ? 's' : ''} on the map.`,
-          temporal
-            ? ` ${temporal.series.length} time-point${temporal.series.length !== 1 ? 's' : ''} available (${temporal.unit}).`
-            : '',
-        ].join('');
-      }
-      case 'time_series':
-      case 'generic': {
-        const tsData = data.data as TimeSeriesData;
-        const title = tsData.chart_configs?.[0]?.title ?? 'Chart';
-        const count = tsData.records?.length ?? 0;
-        const stats = tsData.summary_stats?.value;
-        return [
-          `${title}: ${count} data point${count !== 1 ? 's' : ''}.`,
-          stats
-            ? ` Mean: ${stats.mean.toFixed(1)}, Range: ${stats.min.toFixed(1)} – ${stats.max.toFixed(1)}.`
-            : '',
-        ].join('');
-      }
-      default:
-        return 'Visualisation updated.';
     }
   };
 
@@ -147,11 +99,11 @@ export default function ChatPanel({
       <div className="flex-shrink-0 px-6 py-4 bg-white border-b border-slate-200 shadow-sm">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-blue-500 rounded-lg">
-            <BarChart2 className="w-5 h-5 text-white" />
+            <MapPin className="w-5 h-5 text-white" />
           </div>
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Civic Assistant</h2>
-            <p className="text-sm text-slate-500">Ask about urban & environmental data</p>
+            <p className="text-sm text-slate-500">Ask about taxi availability</p>
           </div>
         </div>
       </div>
@@ -178,16 +130,17 @@ export default function ChatPanel({
               >
                 {message.timestamp.toLocaleTimeString()}
               </p>
-              {message.data && message.data.status === 'success' && (
+              {message.data?.data?.type === 'spatial_query' && (
                 <div className="mt-2 pt-2 border-t border-slate-200">
                   <span className="text-xs text-slate-500">
-                    {(message.data.visualization_type === 'map' ||
-                      message.data.visualization_type === 'map_temporal')
-                      ? `${(message.data.data as MapData).features_count} features on map`
-                      : (message.data.visualization_type === 'time_series' ||
-                          message.data.visualization_type === 'generic')
-                        ? `${(message.data.data as TimeSeriesData).records?.length ?? 0} records`
-                        : null}
+                    {message.data.data.taxi_count} taxis in {message.data.data.context?.zone_name ?? message.data.data.context?.type ?? 'area'}
+                  </span>
+                </div>
+              )}
+              {message.data?.data?.type === 'timeline' && (
+                <div className="mt-2 pt-2 border-t border-slate-200">
+                  <span className="text-xs text-slate-500">
+                    {message.data.data.snapshots.length} snapshots · {message.data.data.context?.zone_name ?? message.data.data.context?.type ?? 'area'}
                   </span>
                 </div>
               )}
@@ -216,7 +169,7 @@ export default function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about urban & environmental data…"
+            placeholder="Ask about taxis in a zone…"
             disabled={isLoading}
             className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
@@ -237,9 +190,9 @@ export default function ChatPanel({
         {messages.length === 1 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {[
-              'Show me air temperature for today',
-              "What's the current taxi availability?",
-              'Show me PM2.5 readings across Singapore',
+              'How many taxis in Punggol?',
+              'Taxi in Jurong',
+              'Taxis near Orchard Road',
             ].map((suggestion) => (
               <button
                 key={suggestion}

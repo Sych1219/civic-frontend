@@ -2,68 +2,67 @@
 // API response types matching the backend contract (docs/apis-data-contract.md)
 // ────────────────────────────────────────────────────────────────────────────
 
-export type VisualizationType = 'map' | 'map_temporal' | 'time_series' | 'generic' | 'error';
+// ── Context Union ─────────────────────────────────────────────────────────────
 
-// ── Chart types ──────────────────────────────────────────────────────────────
-
-export interface ChartConfig {
-  type: 'line' | 'bar' | 'scatter' | string;
-  title: string;
-  x_axis: string;
-  y_axis: string;
-  x_label: string;
-  y_label: string;
+export interface TaxiQueryContext {
+  type: 'radius' | 'nearest' | 'zone' | 'polygon' | 'road' | 'route';
+  lat?: number;
+  lon?: number;
+  radius_m?: number;
+  limit?: number;
+  zone_name?: string;
+  category?: string;
+  buffer_m?: number;
+  road_name?: string;
+  polygon?: object;
+  route?: object;
 }
 
-export interface SummaryStats {
-  mean: number;
-  min: number;
-  max: number;
-  std: number;
+// ── Snapshot (timeline metadata only — no geometry) ──────────────────────────
+
+export interface SnapshotEntry {
+  snapshot_id: number;
+  timestamp: string;
+  taxi_count: number;
 }
 
-// ── Time-series / generic response data ─────────────────────────────────────
+// ── Data Union (tagged) ───────────────────────────────────────────────────────
 
-export interface TimeSeriesData {
-  records: Record<string, unknown>[];
-  summary_stats: Record<string, SummaryStats>;
-  chart_configs: ChartConfig[];
-  columns: string[];
+export interface SpatialQueryData {
+  type: 'spatial_query';
+  taxi_count: number;
+  snapshot_time: string;
+  context: TaxiQueryContext | null;
+  locations: GeoJSON.FeatureCollection;
 }
 
-// ── Map / GeoJSON response data ──────────────────────────────────────────────
-
-export interface TemporalDataPoint {
-  time: string;
-  value: number;
-  attribute: string;
+export interface TimelineData {
+  type: 'timeline';
+  from_time: string;
+  to_time: string;
+  context: TaxiQueryContext | null;
+  window_minutes?: number;
+  snapshots: SnapshotEntry[];
 }
 
-export interface TemporalData {
-  series: TemporalDataPoint[];
-  unit: string;
-}
+// ── Zone geometry (boundary overlay) ─────────────────────────────────────────
 
-export interface MapData {
-  geojson: GeoJSON.FeatureCollection;
-  bounds: [[number, number], [number, number]];
-  center: { lat: number; lon: number };
-  features_count: number;
-  property_type?: 'temporal' | 'static';
-  temporal?: TemporalData;
+export interface ZoneGeometryData {
+  type: 'zone_geometry';
+  name: string;
+  category: 'district' | 'road' | 'highway';
+  geometry: GeoJSON.Polygon | GeoJSON.LineString;
 }
 
 // ── Top-level response ───────────────────────────────────────────────────────
 
 export interface ApiResponse {
-  status: 'success' | 'error';
-  /** MapData for map/map_temporal; TimeSeriesData for time_series/generic; {} on error */
-  data: MapData | TimeSeriesData | Record<string, never>;
-  visualization_type: VisualizationType;
-  error: string | null;
-  /** Stable machine identifier for the layer, e.g. "temperature", "taxi", "pm25" */
+  answer: string;
+  data: SpatialQueryData | TimelineData | ZoneGeometryData | null;
+  metadata: {
+    execution_time_ms: number;
+  };
   layer_id?: string;
-  /** Human-readable name shown in the LayerToggle panel, e.g. "Air Temperature" */
   layer_label?: string;
 }
 
