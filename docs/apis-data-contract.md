@@ -2,7 +2,7 @@
 
 > **Cross-repo docs** — when updating this file, also check:
 > - `civic-app` → `design-docs/MVP-taxi-spatial-qa.md` — defines the same `POST /api/v1/query` contract and response passthrough
-> - `gov-data` → `docs/design-doc.md` — upstream source of `SpatialQueryData`, `TimelineData`, `ZoneGeometryData` shapes
+> - `gov-data` → `docs/taxi-availability-design-doc.md` — upstream source of `SpatialQueryData`, `TimelineData`, `ZoneGeometryData` shapes
 > - `gov-data` → `docs/zone-init-design.md` — zone names and categories referenced by `ZoneGeometryData`
 > - Full index: `civic-frontend/docs/cross-repo-index.md`
 
