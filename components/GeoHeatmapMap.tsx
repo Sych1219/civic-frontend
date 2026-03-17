@@ -399,6 +399,11 @@ export default function GeoHeatmapMap({
   useEffect(() => {
     setSnapshotIndex(0);
     setIsPlaying(false);
+    // Mapbox doesn't auto-detect container size changes when the slider
+    // appears/disappears, so we nudge it to recalculate.
+    if (map.current) {
+      requestAnimationFrame(() => map.current?.resize());
+    }
   }, [activeTimelineId]);
 
   // ── Timeline: switch visible snapshot via filter expression ─────────────

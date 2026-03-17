@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { SendHorizontal, Loader2, MapPin } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { ApiResponse } from '@/types/api';
 
 interface Message {
@@ -122,7 +124,9 @@ export default function ChatPanel({
                   : 'bg-slate-100 text-slate-900 rounded-bl-sm'
               }`}
             >
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+              <div className="text-sm leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-hr:my-2 prose-headings:my-1.5 prose-strong:font-semibold [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-4 [&_ol]:pl-4">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+              </div>
               <p
                 className={`text-xs mt-2 ${
                   message.role === 'user' ? 'text-blue-100' : 'text-slate-500'
@@ -166,12 +170,13 @@ export default function ChatPanel({
       <div className="flex-shrink-0 px-6 py-4 bg-white border-t border-slate-200">
         <form onSubmit={handleSubmit} className="flex space-x-3">
           <input
+            id="chat-input"
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about taxis in a zone…"
             disabled={isLoading}
-            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
           <button
             type="submit"
