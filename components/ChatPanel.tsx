@@ -191,7 +191,7 @@ export default function ChatPanel({
           <div className="mt-3 flex flex-wrap gap-2">
             {[
               'How many taxis in Punggol?',
-              'Taxi in Jurong',
+              'Show me taxi activity in Punggol from midnight to 8am on March 9 2026',
               'Taxis near Orchard Road',
             ].map((suggestion) => (
               <button
