@@ -41,6 +41,7 @@ Zone geometry seeding           Strips {success,data,error}         Consumes {an
 |-----|---------|
 | `docs/apis-data-contract.md` | Frontend–backend API contract: request/response shapes, error semantics |
 | `docs/design.md` | Frontend architecture, components, visualisation modes, multi-layer support |
+| `docs/traffic-camera-ui-design.md` | Traffic camera UI design: split-panel views, view routing, component structure |
 
 ---
 
