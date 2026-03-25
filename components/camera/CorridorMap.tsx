@@ -17,8 +17,6 @@ function congestionColor(level: string | undefined): string {
   return CONGESTION_COLORS[level ?? ''] ?? '#6b7280';
 }
 
-const ROUTE_SOURCE = 'corridor-route';
-const ROUTE_LAYER  = 'corridor-route-layer';
 
 interface CorridorMapProps {
   mapboxToken: string;
@@ -99,40 +97,6 @@ export default function CorridorMap({
       markersRef.current.push(marker);
     });
 
-    // ── Route line (one segment per consecutive pair, coloured by congestion) ─
-    if (map.getLayer(ROUTE_LAYER)) map.removeLayer(ROUTE_LAYER);
-    if (map.getSource(ROUTE_SOURCE)) map.removeSource(ROUTE_SOURCE);
-
-    if (cameras.length >= 2) {
-      const segments: GeoJSON.Feature<GeoJSON.LineString>[] = cameras.slice(0, -1).map((cam, i) => ({
-        type: 'Feature',
-        properties: { color: congestionColor(cam.analysis?.congestion) },
-        geometry: {
-          type: 'LineString',
-          coordinates: [
-            [cam.longitude, cam.latitude],
-            [cameras[i + 1].longitude, cameras[i + 1].latitude],
-          ],
-        },
-      }));
-
-      map.addSource(ROUTE_SOURCE, {
-        type: 'geojson',
-        data: { type: 'FeatureCollection', features: segments },
-      });
-
-      map.addLayer({
-        id: ROUTE_LAYER,
-        type: 'line',
-        source: ROUTE_SOURCE,
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': ['get', 'color'],
-          'line-width': 4,
-          'line-opacity': 0.85,
-        },
-      });
-    }
 
     // ── Fit bounds to all cameras ─────────────────────────────────────────────
     if (cameras.length === 1) {
