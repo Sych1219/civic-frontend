@@ -85,11 +85,13 @@ Note: field name is **`message`** (not `query` as used by the taxi dashboard).
   "view_type": "corridor",
   "cameras": [
     {
-      "camera_id": "1701",
-      "location_name": "CTE - Ang Mo Kio",
-      "lat": 1.3456,
-      "lon": 103.8321,
-      "image_url": "https://...",
+      "cameraId": 1701,
+      "locationName": "CTE - Ang Mo Kio",
+      "latitude": 1.3456,
+      "longitude": 103.8321,
+      "latestImage": "https://...",
+      "timestamp": "2026-03-24T17:01:11+08:00",
+      "resolution": "HD",
       "analysis": {
         "congestion": "heavy",
         "vehicle_density": "packed",
@@ -133,13 +135,13 @@ Triggered by: "Show all cameras", "Show me Woodlands", "Cameras near me"
 
 - Mapbox map with camera markers from `cameras[]`
 - Markers color-coded by `analysis.congestion` (or neutral grey if no analysis — Phase 2 skipped for `camera_map`)
-- Click marker → popup: `location_name`, `image_url` thumbnail, status
+- Click marker → popup: `locationName`, `latestImage` thumbnail, status
 - `LayerToggle` at bottom-left (same as taxi dashboard)
 
 ```
 ┌───────────────────────────────────┐
 │  [Mapbox map]                     │
-│         📷   📷                   │  ← cameras[].lat/lon
+│         📷   📷                   │  ← cameras[].latitude/longitude
 │    📷          📷                 │
 │        📷  📷     📷              │
 │                                   │
@@ -158,7 +160,7 @@ Triggered by: "Is CTE jammed?", "BKE cameras"
 - Map zooms/fits bounds to the corridor cameras
 - Camera markers color-coded by `analysis.congestion`
 - GeoJSON LineString connecting cameras in order, segmented and colored by congestion per segment (same approach as taxi dashboard zone boundary overlays)
-- Click marker → popup: `location_name`, `image_url` thumbnail, `analysis.summary`
+- Click marker → popup: `locationName`, `latestImage` thumbnail, `analysis.summary`
 - `LayerToggle` at bottom-left
 
 The LLM corridor summary (`answer`) appears in the **left chat panel** as the assistant message.
@@ -257,7 +259,7 @@ Same overlay pattern as `camera_detail`: the map stays visible, a floating panel
 Triggered by: "Any accidents right now?", "Any incidents?"
 
 - List of cameras from `cameras[]` where `analysis.incidents` is not `none`
-- Each row: `location_name`, thumbnail, `analysis.incidents`, `analysis.congestion`
+- Each row: `locationName`, thumbnail, `analysis.incidents`, `analysis.congestion`
 - Click row → navigate to `camera_detail` for that camera
 
 ```
