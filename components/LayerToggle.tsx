@@ -1,7 +1,8 @@
 'use client';
 
 import { Eye, EyeOff, X } from 'lucide-react';
-import type { ApiResponse } from '@/types/api';
+import type { ChatResponse, CameraArtifactData } from '@/types/api';
+import { getTaxiData } from '@/types/api';
 
 // One colour per layer index — cycles if there are more than 8 layers
 const LAYER_COLOURS = [
@@ -16,7 +17,7 @@ const LAYER_COLOURS = [
 ];
 
 interface LayerToggleProps {
-  layers: Record<string, ApiResponse>;
+  layers: Record<string, ChatResponse>;
   visibility: Record<string, boolean>;
   onToggle: (layerId: string) => void;
   onRemove: (layerId: string) => void;
@@ -40,8 +41,13 @@ export default function LayerToggle({
       <ul className="py-1">
         {layerIds.map((id, idx) => {
           const layer = layers[id];
-          const ctx = (layer.data?.type === 'spatial_query' || layer.data?.type === 'timeline') ? layer.data.context : null;
-          const label = layer.layer_label ?? ctx?.zone_name ?? ctx?.road_name ?? layer.data?.type ?? id;
+          const artifact = layer.artifacts?.[0];
+          const taxiData = getTaxiData(layer);
+          const ctx = (taxiData?.type === 'spatial_query' || taxiData?.type === 'timeline') ? taxiData.context : null;
+          const cameraViewType = artifact?.type === 'traffic_cameras'
+            ? (artifact.data as CameraArtifactData).view_type
+            : null;
+          const label = ctx?.zone_name ?? ctx?.road_name ?? taxiData?.type ?? cameraViewType ?? id;
           const isVisible = visibility[id] ?? true;
           const colour = LAYER_COLOURS[idx % LAYER_COLOURS.length];
 

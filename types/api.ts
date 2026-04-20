@@ -54,16 +54,39 @@ export interface ZoneGeometryData {
   geometry: GeoJSON.Polygon | GeoJSON.LineString;
 }
 
-// ── Top-level response ───────────────────────────────────────────────────────
+// ── Artifact data shapes ──────────────────────────────────────────────────────
 
-export interface ApiResponse {
+export interface TaxiArtifactData {
+  raw: SpatialQueryData | TimelineData | ZoneGeometryData | null;
+}
+
+export interface CameraArtifactData {
+  view_type: string;
+  cameras: unknown[];
+}
+
+export interface Artifact {
+  type: 'taxi_data' | 'traffic_cameras';
+  data: TaxiArtifactData | CameraArtifactData;
+}
+
+// ── Unified request / response ────────────────────────────────────────────────
+
+export interface ChatRequest {
+  message: string;
+}
+
+export interface ChatResponse {
   answer: string;
-  data: SpatialQueryData | TimelineData | ZoneGeometryData | null;
-  metadata: {
-    execution_time_ms: number;
-  };
-  layer_id?: string;
-  layer_label?: string;
+  artifacts: Artifact[];
+}
+
+// ── Helper — extract taxi data from a ChatResponse ───────────────────────────
+
+export function getTaxiData(r: ChatResponse): SpatialQueryData | TimelineData | ZoneGeometryData | null {
+  const a = r.artifacts?.[0];
+  if (a?.type === 'taxi_data') return (a.data as TaxiArtifactData).raw;
+  return null;
 }
 
 // ── Map visualisation modes (used by GeoHeatmapMap) ─────────────────────────

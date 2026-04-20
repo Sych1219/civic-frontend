@@ -5,12 +5,13 @@ import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { Play, Pause } from 'lucide-react';
 import LayerToggle from './LayerToggle';
-import type { ApiResponse, SpatialQueryData, TimelineData, VisualizationMode, ZoneGeometryData } from '@/types/api';
+import type { ChatResponse, SpatialQueryData, TimelineData, VisualizationMode, ZoneGeometryData } from '@/types/api';
+import { getTaxiData } from '@/types/api';
 
 interface GeoHeatmapMapProps {
   mapboxToken: string;
   javaBackendUrl: string;
-  layers: Record<string, ApiResponse>;
+  layers: Record<string, ChatResponse>;
   visibility: Record<string, boolean>;
   zoneGeometries?: Record<string, ZoneGeometryData>;
   onToggle: (layerId: string) => void;
@@ -278,10 +279,10 @@ export default function GeoHeatmapMap({
   const [isPlaying, setIsPlaying] = useState(false);
 
   const timelineEntry = Object.entries(layers).find(
-    ([id, r]) => r.data?.type === 'timeline' && (visibility[id] ?? true),
+    ([id, r]) => getTaxiData(r)?.type === 'timeline' && (visibility[id] ?? true),
   );
   const activeTimelineId = timelineEntry?.[0] ?? null;
-  const timelineData = (timelineEntry?.[1]?.data ?? null) as TimelineData | null;
+  const timelineData = (timelineEntry ? getTaxiData(timelineEntry[1]) : null) as TimelineData | null;
   const snapshots = timelineData?.snapshots ?? [];
 
   // ── Map initialisation ────────────────────────────────────────────────────
@@ -338,13 +339,14 @@ export default function GeoHeatmapMap({
 
     // Add newly arrived layers
     for (const [layerId, response] of Object.entries(layers)) {
-      if (addedLayerTypes.current.has(layerId) || !response.data) continue;
-      const type = response.data.type;
+      const taxiData = getTaxiData(response);
+      if (addedLayerTypes.current.has(layerId) || !taxiData) continue;
+      const type = taxiData.type;
       if (type === 'spatial_query') {
-        addSpatialMbLayer(m, layerId, (response.data as SpatialQueryData).locations);
+        addSpatialMbLayer(m, layerId, (taxiData as SpatialQueryData).locations);
         addedLayerTypes.current.set(layerId, 'spatial_query');
       } else if (type === 'timeline') {
-        const tl = response.data as TimelineData;
+        const tl = taxiData as TimelineData;
         if (tl.snapshots.length > 0) {
           const zone = tl.context?.type === 'zone' ? tl.context.zone_name : undefined;
           const allIds = tl.snapshots.map(s => s.snapshot_id);
