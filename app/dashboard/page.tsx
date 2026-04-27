@@ -21,7 +21,7 @@ export default function DashboardPage() {
   const [layers, setLayers] = useState<Record<string, ChatResponse>>({});
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
   const [zoneGeometries, setZoneGeometries] = useState<Record<string, ZoneGeometryData>>({});
-  const [selectedCamera, setSelectedCamera] = useState<CameraItem | null>(null);
+  const [selectedCamera, setSelectedCamera] = useState<CameraItem>();
   const layerCounter = useRef(0);
 
   // 2. Side effects (data fetching)
@@ -42,7 +42,7 @@ export default function DashboardPage() {
       if ((cameraData.view_type === 'camera_detail' || cameraData.view_type === 'snapshot') && cameras.length > 0) {
         setSelectedCamera(cameras[0]);
       } else {
-        setSelectedCamera(null);
+        setSelectedCamera(undefined);
       }
     }
 
@@ -77,7 +77,7 @@ export default function DashboardPage() {
   }, []);
 
   const handleCloseDetail = useCallback(() => {
-    setSelectedCamera(null);
+    setSelectedCamera(undefined);
   }, []);
 
   // 4. Render UI
