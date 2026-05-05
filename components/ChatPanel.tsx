@@ -4,8 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { SendHorizontal, Loader2, MapPin } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatResponse } from '@/types/api';
-import { getTaxiData } from '@/types/api';
+import type { ChatResponse, TaxiArtifactData, CameraArtifactData } from '@/types/api';
 
 interface Message {
   id: string;
@@ -105,31 +104,37 @@ export default function ChatPanel({
 
   // 4. Render UI
   const renderMessageBadge = (message: Message) => {
-    const taxiData = message.data ? getTaxiData(message.data) : null;
-    const artifact = message.data?.artifacts?.[0];
+    const artifacts = message.data?.artifacts ?? [];
+    if (artifacts.length === 0) return null;
 
-    if (taxiData?.type === 'spatial_query') return (
-      <div className="mt-2 pt-2 border-t border-slate-200">
-        <span className="text-xs text-slate-500">
-          {taxiData.taxi_count} taxis · {taxiData.context?.zone_name ?? taxiData.context?.type ?? 'area'}
-        </span>
+    const badges = artifacts.flatMap((artifact, i) => {
+      if (artifact.type === 'taxi_data') {
+        const raw = (artifact.data as TaxiArtifactData).raw;
+        if (raw?.type === 'spatial_query') return [
+          <span key={i} className="text-xs text-slate-500">
+            {raw.taxi_count} taxis · {raw.context?.zone_name ?? raw.context?.type ?? 'area'}
+          </span>,
+        ];
+        if (raw?.type === 'timeline') return [
+          <span key={i} className="text-xs text-slate-500">
+            {raw.snapshots.length} snapshots · {raw.context?.zone_name ?? raw.context?.type ?? 'area'}
+          </span>,
+        ];
+      }
+      if (artifact.type === 'traffic_cameras') return [
+        <span key={i} className="text-xs text-slate-500">
+          {(artifact.data as CameraArtifactData).cameras?.length ?? 0} cameras
+        </span>,
+      ];
+      return [];
+    });
+
+    if (badges.length === 0) return null;
+    return (
+      <div className="mt-2 pt-2 border-t border-slate-200 flex flex-wrap gap-x-3 gap-y-1">
+        {badges}
       </div>
     );
-    if (taxiData?.type === 'timeline') return (
-      <div className="mt-2 pt-2 border-t border-slate-200">
-        <span className="text-xs text-slate-500">
-          {taxiData.snapshots.length} snapshots · {taxiData.context?.zone_name ?? taxiData.context?.type ?? 'area'}
-        </span>
-      </div>
-    );
-    if (artifact?.type === 'traffic_cameras') return (
-      <div className="mt-2 pt-2 border-t border-slate-200">
-        <span className="text-xs text-slate-500">
-          {(artifact.data as { cameras: unknown[] }).cameras?.length ?? 0} cameras
-        </span>
-      </div>
-    );
-    return null;
   };
 
   return (

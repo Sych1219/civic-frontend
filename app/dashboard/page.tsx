@@ -30,36 +30,44 @@ export default function DashboardPage() {
 
   // 3. Event handlers
   const handleDataReceived = useCallback((response: ChatResponse) => {
-    const layerId = `layer-${++layerCounter.current}`;
-    setLayers(prev => ({ ...prev, [layerId]: response }));
-    setVisibility(prev => (layerId in prev ? prev : { ...prev, [layerId]: true }));
+    // Each artifact becomes its own map layer so multiple domains render independently.
+    const artifacts = response.artifacts?.length > 0 ? response.artifacts : [undefined];
 
-    const artifact = response.artifacts?.[0];
+    artifacts.forEach((artifact) => {
+      const layerId = `layer-${++layerCounter.current}`;
+      const layerResponse: ChatResponse = {
+        answer: response.answer,
+        artifacts: artifact ? [artifact] : [],
+      };
 
-    if (artifact?.type === 'traffic_cameras') {
-      const cameraData = artifact.data as CameraArtifactData;
-      const cameras = cameraData.cameras as CameraItem[];
-      if ((cameraData.view_type === 'camera_detail' || cameraData.view_type === 'snapshot') && cameras.length > 0) {
-        setSelectedCamera(cameras[0]);
-      } else {
-        setSelectedCamera(undefined);
+      setLayers(prev => ({ ...prev, [layerId]: layerResponse }));
+      setVisibility(prev => ({ ...prev, [layerId]: true }));
+
+      if (artifact?.type === 'traffic_cameras') {
+        const cameraData = artifact.data as CameraArtifactData;
+        const cameras = cameraData.cameras as CameraItem[];
+        if ((cameraData.view_type === 'camera_detail' || cameraData.view_type === 'snapshot') && cameras.length > 0) {
+          setSelectedCamera(cameras[0]);
+        } else {
+          setSelectedCamera(undefined);
+        }
       }
-    }
 
-    if (artifact?.type === 'taxi_data') {
-      const taxiData = getTaxiData(response);
-      const ctx = (taxiData?.type === 'spatial_query' || taxiData?.type === 'timeline') ? taxiData.context : null;
-      if (ctx?.type === 'zone' && ctx.zone_name) {
-        fetch(`${JAVA_BACKEND_URL}/zones/${encodeURIComponent(ctx.zone_name)}/geometry`)
-          .then(res => { if (res.ok) return res.json(); throw new Error(`${res.status}`); })
-          .then((envelope: { success: boolean; data: ZoneGeometryData }) => {
-            if (envelope.success && envelope.data) {
-              setZoneGeometries(prev => ({ ...prev, [layerId]: envelope.data }));
-            }
-          })
-          .catch(err => console.warn(`Failed to fetch zone geometry for "${ctx.zone_name}":`, err));
+      if (artifact?.type === 'taxi_data') {
+        const taxiData = getTaxiData(layerResponse);
+        const ctx = (taxiData?.type === 'spatial_query' || taxiData?.type === 'timeline') ? taxiData.context : null;
+        if (ctx?.type === 'zone' && ctx.zone_name) {
+          fetch(`${JAVA_BACKEND_URL}/zones/${encodeURIComponent(ctx.zone_name)}/geometry`)
+            .then(res => { if (res.ok) return res.json(); throw new Error(`${res.status}`); })
+            .then((envelope: { success: boolean; data: ZoneGeometryData }) => {
+              if (envelope.success && envelope.data) {
+                setZoneGeometries(prev => ({ ...prev, [layerId]: envelope.data }));
+              }
+            })
+            .catch(err => console.warn(`Failed to fetch zone geometry for "${ctx.zone_name}":`, err));
+        }
       }
-    }
+    });
   }, []);
 
   const handleToggle = useCallback((layerId: string) => {
@@ -107,19 +115,26 @@ export default function DashboardPage() {
 
   const hasLayers = Object.keys(layers).length > 0;
   const layerEntries = Object.entries(layers);
-  const latestResponse = layerEntries[layerEntries.length - 1]?.[1];
-  const latestArtifact = latestResponse?.artifacts?.[0];
-  const latestArtifactType = latestArtifact?.type;
 
-  const taxiData = latestResponse ? getTaxiData(latestResponse) : null;
+  const visibleLayerEntries = layerEntries.filter(([id]) => visibility[id]);
+  const hasTaxiLayers = visibleLayerEntries.some(([, r]) => r.artifacts[0]?.type === 'taxi_data');
+  const hasCameraLayers = visibleLayerEntries.some(([, r]) => r.artifacts[0]?.type === 'traffic_cameras');
+
+  // Latest response of each type for badges and context labels
+  const latestCameraEntry = [...layerEntries].reverse().find(([, r]) => r.artifacts[0]?.type === 'traffic_cameras');
+  const latestCameraArtifact = latestCameraEntry?.[1]?.artifacts?.[0];
+  const latestTaxiEntry = [...layerEntries].reverse().find(([, r]) => r.artifacts[0]?.type === 'taxi_data');
+  const latestTaxiResponse = latestTaxiEntry?.[1];
+
+  const taxiData = latestTaxiResponse ? getTaxiData(latestTaxiResponse) : null;
   const latestCtx = (taxiData?.type === 'spatial_query' || taxiData?.type === 'timeline') ? taxiData.context : null;
   const contextLabel = latestCtx?.zone_name ?? latestCtx?.road_name ?? taxiData?.type
-    ?? (latestArtifactType === 'traffic_cameras' ? (latestArtifact?.data as CameraArtifactData)?.view_type : null)
+    ?? (latestCameraArtifact ? (latestCameraArtifact.data as CameraArtifactData)?.view_type : null)
     ?? 'area';
   const latestTaxiCount = taxiData?.type === 'spatial_query' ? taxiData.taxi_count : null;
 
-  const renderCameraPanel = () => {
-    const cameraData = latestArtifact?.data as CameraArtifactData | undefined;
+  const renderCameraPanel = (artifact = latestCameraArtifact) => {
+    const cameraData = artifact?.data as CameraArtifactData | undefined;
     const cameras = (cameraData?.cameras ?? []) as CameraItem[];
     const viewType = cameraData?.view_type;
 
@@ -167,6 +182,45 @@ export default function DashboardPage() {
     );
   };
 
+  const renderCameraOverlay = () => {
+    const cameraData = latestCameraArtifact?.data as CameraArtifactData | undefined;
+    const cameras = (cameraData?.cameras ?? []) as CameraItem[];
+    if (cameras.length === 0) return null;
+    return (
+      <div className="absolute bottom-4 right-4 w-72 bg-white/95 backdrop-blur rounded-xl shadow-xl z-10 max-h-64 overflow-y-auto">
+        <p className="sticky top-0 bg-white/95 text-xs font-semibold text-slate-600 px-3 py-2 border-b border-slate-100">
+          Traffic Cameras ({cameras.length})
+        </p>
+        <div className="p-2 space-y-1">
+          {cameras.map(cam => (
+            <button
+              key={cam.cameraId}
+              onClick={() => handleCameraClick(cam)}
+              className="w-full flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded-lg text-left transition-colors"
+            >
+              {(cam as CameraItem & { latestImage?: string }).latestImage && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={(cam as CameraItem & { latestImage?: string }).latestImage}
+                  alt=""
+                  className="w-16 h-10 object-cover rounded flex-shrink-0"
+                />
+              )}
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-800">Camera {cam.cameraId}</p>
+                {(cam as CameraItem & { analysis?: { congestion?: string } }).analysis?.congestion && (
+                  <p className="text-xs text-slate-500 capitalize">
+                    {(cam as CameraItem & { analysis?: { congestion?: string } }).analysis?.congestion}
+                  </p>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-slate-100">
       {/* Left Panel — Chat */}
@@ -184,18 +238,23 @@ export default function DashboardPage() {
             <MapPin className="w-12 h-12 opacity-30" />
             <p className="text-sm">Ask a question to see data on the map</p>
           </div>
-        ) : latestArtifactType === 'traffic_cameras' ? (
+        ) : hasCameraLayers && !hasTaxiLayers ? (
           renderCameraPanel()
+        ) : hasTaxiLayers ? (
+          <>
+            <GeoHeatmapMap
+              mapboxToken={MAPBOX_TOKEN}
+              javaBackendUrl={JAVA_BACKEND_URL}
+              layers={layers}
+              visibility={visibility}
+              zoneGeometries={zoneGeometries}
+              onToggle={handleToggle}
+              onRemove={handleRemove}
+            />
+            {hasCameraLayers && renderCameraOverlay()}
+          </>
         ) : (
-          <GeoHeatmapMap
-            mapboxToken={MAPBOX_TOKEN}
-            javaBackendUrl={JAVA_BACKEND_URL}
-            layers={layers}
-            visibility={visibility}
-            zoneGeometries={zoneGeometries}
-            onToggle={handleToggle}
-            onRemove={handleRemove}
-          />
+          renderCameraPanel()
         )}
 
         {/* Live-data badge */}
