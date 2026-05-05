@@ -16,6 +16,30 @@ const JAVA_BACKEND_URL = process.env.NEXT_PUBLIC_JAVA_BACKEND_URL || 'http://loc
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/api/v1/chat';
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
+// ── Dedup helpers ──────────────────────────────────────────────────────────────
+
+function artifactHash(artifact: import('@/types/api').Artifact | undefined): string {
+  if (!artifact) return 'empty';
+  const str = JSON.stringify(artifact.data);
+  return `${artifact.type}:${str.length}:${str.slice(0, 80)}:${str.slice(-80)}`;
+}
+
+function getArtifactKey(artifact: import('@/types/api').Artifact | undefined): string | null {
+  if (!artifact) return null;
+  if (artifact.type === 'taxi_data') {
+    const raw = (artifact.data as import('@/types/api').TaxiArtifactData).raw;
+    if (!raw || raw.type === 'zone_geometry') return null;
+    const ctx = raw.context;
+    const contextKey = ctx?.zone_name ?? ctx?.road_name ?? ctx?.type ?? 'unknown';
+    return `taxi:${raw.type}:${contextKey}`;
+  }
+  if (artifact.type === 'traffic_cameras') {
+    const data = artifact.data as CameraArtifactData;
+    return `camera:${data.view_type}`;
+  }
+  return null;
+}
+
 export default function DashboardPage() {
   // 1. State
   const [layers, setLayers] = useState<Record<string, ChatResponse>>({});
@@ -23,6 +47,8 @@ export default function DashboardPage() {
   const [zoneGeometries, setZoneGeometries] = useState<Record<string, ZoneGeometryData>>({});
   const [selectedCamera, setSelectedCamera] = useState<CameraItem>();
   const layerCounter = useRef(0);
+  const layerHashesRef = useRef<Map<string, string>>(new Map());
+  const layerKeysRef = useRef<Map<string, string>>(new Map());
 
   // 2. Side effects (data fetching)
   // Zone geometry is fetched reactively inside handleDataReceived when a taxi
@@ -34,14 +60,31 @@ export default function DashboardPage() {
     const artifacts = response.artifacts?.length > 0 ? response.artifacts : [undefined];
 
     artifacts.forEach((artifact) => {
-      const layerId = `layer-${++layerCounter.current}`;
+      const hash = artifactHash(artifact);
+      const semanticKey = getArtifactKey(artifact);
+
+      // Skip exact duplicates — same content already on the map
+      if ([...layerHashesRef.current.values()].includes(hash)) return;
+
+      // Find existing layer with the same semantic key to replace
+      let existingLayerId: string | null = null;
+      if (semanticKey) {
+        for (const [id, key] of layerKeysRef.current) {
+          if (key === semanticKey) { existingLayerId = id; break; }
+        }
+      }
+
+      const layerId = existingLayerId ?? `layer-${++layerCounter.current}`;
       const layerResponse: ChatResponse = {
         answer: response.answer,
         artifacts: artifact ? [artifact] : [],
       };
 
       setLayers(prev => ({ ...prev, [layerId]: layerResponse }));
-      setVisibility(prev => ({ ...prev, [layerId]: true }));
+      if (!existingLayerId) setVisibility(prev => ({ ...prev, [layerId]: true }));
+
+      layerHashesRef.current.set(layerId, hash);
+      if (semanticKey) layerKeysRef.current.set(layerId, semanticKey);
 
       if (artifact?.type === 'traffic_cameras') {
         const cameraData = artifact.data as CameraArtifactData;
@@ -78,6 +121,8 @@ export default function DashboardPage() {
     setLayers(prev => { const next = { ...prev }; delete next[layerId]; return next; });
     setVisibility(prev => { const next = { ...prev }; delete next[layerId]; return next; });
     setZoneGeometries(prev => { const next = { ...prev }; delete next[layerId]; return next; });
+    layerHashesRef.current.delete(layerId);
+    layerKeysRef.current.delete(layerId);
   }, []);
 
   const handleCameraClick = useCallback((camera: CameraItem) => {
@@ -116,9 +161,12 @@ export default function DashboardPage() {
   const hasLayers = Object.keys(layers).length > 0;
   const layerEntries = Object.entries(layers);
 
-  const visibleLayerEntries = layerEntries.filter(([id]) => visibility[id]);
-  const hasTaxiLayers = visibleLayerEntries.some(([, r]) => r.artifacts[0]?.type === 'taxi_data');
-  const hasCameraLayers = visibleLayerEntries.some(([, r]) => r.artifacts[0]?.type === 'traffic_cameras');
+  const hasTaxiLayers = layerEntries.some(([, r]) => r.artifacts[0]?.type === 'taxi_data');
+  const hasCameraLayers = layerEntries.some(([, r]) => r.artifacts[0]?.type === 'traffic_cameras');
+
+  const visibleCameraItems = layerEntries
+    .filter(([id, r]) => visibility[id] !== false && r.artifacts[0]?.type === 'traffic_cameras')
+    .flatMap(([, r]) => ((r.artifacts[0]?.data as CameraArtifactData)?.cameras ?? []) as import('@/types/camera').CameraItem[]);
 
   // Latest response of each type for badges and context labels
   const latestCameraEntry = [...layerEntries].reverse().find(([, r]) => r.artifacts[0]?.type === 'traffic_cameras');
@@ -182,44 +230,6 @@ export default function DashboardPage() {
     );
   };
 
-  const renderCameraOverlay = () => {
-    const cameraData = latestCameraArtifact?.data as CameraArtifactData | undefined;
-    const cameras = (cameraData?.cameras ?? []) as CameraItem[];
-    if (cameras.length === 0) return null;
-    return (
-      <div className="absolute bottom-4 right-4 w-72 bg-white/95 backdrop-blur rounded-xl shadow-xl z-10 max-h-64 overflow-y-auto">
-        <p className="sticky top-0 bg-white/95 text-xs font-semibold text-slate-600 px-3 py-2 border-b border-slate-100">
-          Traffic Cameras ({cameras.length})
-        </p>
-        <div className="p-2 space-y-1">
-          {cameras.map(cam => (
-            <button
-              key={cam.cameraId}
-              onClick={() => handleCameraClick(cam)}
-              className="w-full flex items-center gap-2 p-1.5 hover:bg-slate-50 rounded-lg text-left transition-colors"
-            >
-              {(cam as CameraItem & { latestImage?: string }).latestImage && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={(cam as CameraItem & { latestImage?: string }).latestImage}
-                  alt=""
-                  className="w-16 h-10 object-cover rounded flex-shrink-0"
-                />
-              )}
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-800">Camera {cam.cameraId}</p>
-                {(cam as CameraItem & { analysis?: { congestion?: string } }).analysis?.congestion && (
-                  <p className="text-xs text-slate-500 capitalize">
-                    {(cam as CameraItem & { analysis?: { congestion?: string } }).analysis?.congestion}
-                  </p>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  };
 
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-slate-100">
@@ -241,18 +251,57 @@ export default function DashboardPage() {
         ) : hasCameraLayers && !hasTaxiLayers ? (
           renderCameraPanel()
         ) : hasTaxiLayers ? (
-          <>
-            <GeoHeatmapMap
-              mapboxToken={MAPBOX_TOKEN}
-              javaBackendUrl={JAVA_BACKEND_URL}
-              layers={layers}
-              visibility={visibility}
-              zoneGeometries={zoneGeometries}
-              onToggle={handleToggle}
-              onRemove={handleRemove}
-            />
-            {hasCameraLayers && renderCameraOverlay()}
-          </>
+          <div className="flex h-full">
+            <div className="flex-1 relative overflow-hidden">
+              <GeoHeatmapMap
+                mapboxToken={MAPBOX_TOKEN}
+                javaBackendUrl={JAVA_BACKEND_URL}
+                layers={layers}
+                visibility={visibility}
+                zoneGeometries={zoneGeometries}
+                onToggle={handleToggle}
+                onRemove={handleRemove}
+                cameraItems={visibleCameraItems}
+                selectedCamera={selectedCamera ?? null}
+                onCameraClick={handleCameraClick}
+              />
+              {selectedCamera && visibleCameraItems.some(c => c.cameraId === selectedCamera.cameraId) && (
+                <CameraDetail
+                  camera={selectedCamera}
+                  nearbyCameras={visibleCameraItems.filter(c => c.cameraId !== selectedCamera.cameraId)}
+                  onClose={handleCloseDetail}
+                  onCameraClick={handleCameraClick}
+                />
+              )}
+            </div>
+            {visibleCameraItems.length > 0 && !selectedCamera && (
+              <div className="w-64 flex-shrink-0 bg-slate-900 border-l border-slate-700 overflow-y-auto">
+                <p className="sticky top-0 bg-slate-900 text-xs font-semibold text-slate-400 uppercase tracking-widest px-4 py-3 border-b border-slate-700">
+                  Traffic Cameras ({visibleCameraItems.length})
+                </p>
+                <div className="p-2 space-y-1">
+                  {visibleCameraItems.map(cam => (
+                    <button
+                      key={cam.cameraId}
+                      onClick={() => handleCameraClick(cam)}
+                      className="w-full flex items-center gap-2 p-2 hover:bg-slate-800 rounded-lg text-left transition-colors"
+                    >
+                      {cam.latestImage && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={cam.latestImage} alt="" className="w-16 h-10 object-cover rounded flex-shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-slate-200 truncate">{cam.locationName}</p>
+                        <p className="text-xs text-slate-500 capitalize">
+                          {cam.analysis?.congestion?.replace('_', ' ') ?? 'No data'}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         ) : (
           renderCameraPanel()
         )}

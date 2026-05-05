@@ -7,6 +7,19 @@ import { Play, Pause } from 'lucide-react';
 import LayerToggle from './LayerToggle';
 import type { ChatResponse, SpatialQueryData, TimelineData, VisualizationMode, ZoneGeometryData } from '@/types/api';
 import { getTaxiData } from '@/types/api';
+import type { CameraItem } from '@/types/camera';
+
+const CONGESTION_COLORS: Record<string, string> = {
+  free_flow:  '#22c55e',
+  light:      '#eab308',
+  moderate:   '#f97316',
+  heavy:      '#ef4444',
+  standstill: '#7f1d1d',
+};
+
+function congestionColor(level: string | undefined): string {
+  return CONGESTION_COLORS[level ?? ''] ?? '#6b7280';
+}
 
 interface GeoHeatmapMapProps {
   mapboxToken: string;
@@ -16,6 +29,9 @@ interface GeoHeatmapMapProps {
   zoneGeometries?: Record<string, ZoneGeometryData>;
   onToggle: (layerId: string) => void;
   onRemove: (layerId: string) => void;
+  cameraItems?: CameraItem[];
+  selectedCamera?: CameraItem | null;
+  onCameraClick?: (camera: CameraItem) => void;
 }
 
 const PLAYBACK_INTERVAL_MS = 600;
@@ -264,11 +280,17 @@ export default function GeoHeatmapMap({
   zoneGeometries = {},
   onToggle,
   onRemove,
+  cameraItems,
+  selectedCamera,
+  onCameraClick,
 }: GeoHeatmapMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const addedLayerTypes = useRef<Map<string, 'spatial_query' | 'timeline'>>(new Map());
   const addedBoundaries = useRef<Set<string>>(new Set());
+  const cameraMarkersRef = useRef<mapboxgl.Marker[]>([]);
+  const onCameraClickRef = useRef(onCameraClick);
+  onCameraClickRef.current = onCameraClick;
 
   const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -312,12 +334,18 @@ export default function GeoHeatmapMap({
       setLoading(false);
       setMapReady(true);
     });
+    const container = mapContainer.current;
+    const ro = new ResizeObserver(() => { map.current?.resize(); });
+    if (container) ro.observe(container);
+
     return () => {
+      ro.disconnect();
       if (map.current) {
         map.current.remove();
         map.current = null;
         addedLayerTypes.current.clear();
         addedBoundaries.current.clear();
+        cameraMarkersRef.current = [];
       }
     };
   }, [mapboxToken, updateVisualizationMode]);
@@ -395,6 +423,59 @@ export default function GeoHeatmapMap({
       applyZoneBoundaryVisibility(m, layerId, visibility[layerId] ?? true);
     }
   }, [mapReady, visibility]);
+
+  // ── Camera markers ────────────────────────────────────────────────────────
+
+  const buildCameraMarkers = useCallback(() => {
+    const m = map.current;
+    if (!m) return;
+
+    cameraMarkersRef.current.forEach(marker => marker.remove());
+    cameraMarkersRef.current = [];
+
+    (cameraItems ?? []).forEach(camera => {
+      const isSelected = selectedCamera?.cameraId === camera.cameraId;
+      const color = congestionColor(camera.analysis?.congestion);
+      const size = isSelected ? 36 : 28;
+      const iconSize = Math.round(size * 0.55);
+
+      const el = document.createElement('div');
+      el.style.cssText = `
+        width: ${size}px; height: ${size}px;
+        background: ${color};
+        border: ${isSelected ? 3 : 2}px solid ${isSelected ? '#fff' : 'rgba(255,255,255,0.5)'};
+        border-radius: 8px;
+        cursor: pointer;
+        box-shadow: 0 2px ${isSelected ? 12 : 5}px ${color}99;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
+      el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
+
+      const popup = new mapboxgl.Popup({ offset: 22, closeButton: false }).setHTML(`
+        <div style="font-family:sans-serif;padding:4px 2px">
+          <p style="font-weight:600;margin:0 0 4px;font-size:12px">${camera.locationName}</p>
+          ${camera.latestImage ? `<img src="${camera.latestImage}" style="width:150px;border-radius:4px;margin-bottom:4px" />` : ''}
+          <p style="margin:0;font-size:11px;color:#888;text-transform:capitalize">${camera.analysis?.congestion ?? 'No data'}</p>
+        </div>
+      `);
+
+      const marker = new mapboxgl.Marker({ element: el })
+        .setLngLat([camera.longitude, camera.latitude])
+        .setPopup(popup)
+        .addTo(m);
+
+      el.addEventListener('click', () => onCameraClickRef.current?.(camera));
+      cameraMarkersRef.current.push(marker);
+    });
+  }, [cameraItems, selectedCamera]);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    buildCameraMarkers();
+  }, [mapReady, buildCameraMarkers]);
 
   // ── Timeline: reset on active timeline change ─────────────────────────────
 
