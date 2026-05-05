@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import type { CameraItem } from '@/types/camera';
 
@@ -29,8 +31,17 @@ export default function CameraDetail({
   onCameraClick,
 }: CameraDetailProps) {
   const congestionColor = CONGESTION_COLORS[camera.analysis?.congestion ?? ''] ?? '#6b7280';
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightboxOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightboxOpen]);
 
   return (
+    <>
     <div className="absolute top-4 right-4 bottom-4 w-72 bg-slate-900/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden flex flex-col z-20 border border-slate-700">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0">
@@ -62,10 +73,12 @@ export default function CameraDetail({
             <img
               src={camera.latestImage}
               alt={camera.locationName ?? undefined}
-              className="w-full rounded-lg object-cover"
+              className="w-full rounded-lg object-cover cursor-zoom-in"
+              onClick={() => setLightboxOpen(true)}
             />
           </div>
         )}
+
 
         {/* Analysis */}
         {camera.analysis ? (
@@ -138,5 +151,31 @@ export default function CameraDetail({
         )}
       </div>
     </div>
+
+    {lightboxOpen && camera.latestImage && createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        onClick={() => setLightboxOpen(false)}
+      >
+        <button
+          className="absolute top-4 right-4 p-2 rounded-full bg-slate-800/80 text-white hover:bg-slate-700 transition-colors"
+          onClick={() => setLightboxOpen(false)}
+          aria-label="Close"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <img
+          src={camera.latestImage}
+          alt={camera.locationName ?? undefined}
+          className="max-w-[90vw] max-h-[90vh] rounded-xl shadow-2xl object-contain"
+          onClick={e => e.stopPropagation()}
+        />
+        <p className="absolute bottom-6 left-1/2 -translate-x-1/2 text-slate-300 text-sm bg-slate-900/70 px-3 py-1 rounded-full pointer-events-none">
+          {camera.locationName} · Cam {camera.cameraId}
+        </p>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }

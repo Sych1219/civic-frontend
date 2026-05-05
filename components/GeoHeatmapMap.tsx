@@ -63,6 +63,16 @@ function zoneBoundaryIds(layerId: string) {
   };
 }
 
+function loadTaxiIcon(m: mapboxgl.Map): Promise<void> {
+  return new Promise((resolve) => {
+    if (m.hasImage('taxi-icon')) { resolve(); return; }
+    const img = new Image();
+    img.onload = () => { m.addImage('taxi-icon', img); resolve(); };
+    img.onerror = () => resolve();
+    img.src = '/taxi-cab.png';
+  });
+}
+
 function addZoneBoundaryMbLayer(m: mapboxgl.Map, layerId: string, geo: ZoneGeometryData) {
   const ids = zoneBoundaryIds(layerId);
   const geojson: GeoJSON.Feature = { type: 'Feature', geometry: geo.geometry, properties: { name: geo.name, category: geo.category } };
@@ -131,12 +141,12 @@ function addSpatialMbLayer(m: mapboxgl.Map, layerId: string, geojson: GeoJSON.Fe
   }
   if (!m.getLayer(ids.clusters)) {
     m.addLayer({
-      id: ids.clusters, type: 'circle', source: ids.source,
+      id: ids.clusters, type: 'symbol', source: ids.source,
       filter: ['has', 'point_count'], minzoom: 12, maxzoom: 15,
-      paint: {
-        'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 100, '#f1f075', 750, '#f28cb1'],
-        'circle-radius': ['step', ['get', 'point_count'], 20, 100, 30, 750, 40],
-        'circle-opacity': 0.8, 'circle-stroke-width': 2, 'circle-stroke-color': '#fff',
+      layout: {
+        'icon-image': 'taxi-icon',
+        'icon-size': 0.08,
+        'icon-allow-overlap': true,
       },
     });
   }
@@ -147,18 +157,20 @@ function addSpatialMbLayer(m: mapboxgl.Map, layerId: string, geojson: GeoJSON.Fe
       layout: {
         'text-field': '{point_count_abbreviated}',
         'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
-        'text-size': 12,
+        'text-size': 14,
+        'text-offset': [0, -2.2],
       },
-      paint: { 'text-color': '#ffffff' },
+      paint: { 'text-color': '#000000', 'text-halo-color': '#ffffff', 'text-halo-width': 2.5 },
     });
   }
   if (!m.getLayer(ids.points)) {
     m.addLayer({
-      id: ids.points, type: 'circle', source: ids.source,
+      id: ids.points, type: 'symbol', source: ids.source,
       filter: ['!', ['has', 'point_count']], minzoom: 15,
-      paint: {
-        'circle-color': '#11b4da', 'circle-radius': 6,
-        'circle-stroke-width': 1, 'circle-stroke-color': '#fff', 'circle-opacity': 0.9,
+      layout: {
+        'icon-image': 'taxi-icon',
+        'icon-size': 0.05,
+        'icon-allow-overlap': true,
       },
     });
   }
@@ -213,11 +225,12 @@ function addTimelineMbLayer(
   }
   if (!m.getLayer(ids.points)) {
     m.addLayer({
-      id: ids.points, type: 'circle', source: ids.source, 'source-layer': 'taxis',
+      id: ids.points, type: 'symbol', source: ids.source, 'source-layer': 'taxis',
       filter: ['==', ['get', 'snapshot_id'], initialSnapshotId],
-      paint: {
-        'circle-color': '#11b4da', 'circle-radius': 6,
-        'circle-stroke-width': 1, 'circle-stroke-color': '#fff', 'circle-opacity': 0.9,
+      layout: {
+        'icon-image': 'taxi-icon',
+        'icon-size': 0.05,
+        'icon-allow-overlap': true,
       },
     });
   }
@@ -328,11 +341,15 @@ export default function GeoHeatmapMap({
     });
     map.current.on('load', () => {
       if (!map.current) return;
-      map.current.addControl(new mapboxgl.NavigationControl(), 'top-left');
-      map.current.on('zoom', () => { if (map.current) updateVisualizationMode(map.current.getZoom()); });
-      updateVisualizationMode(map.current.getZoom());
-      setLoading(false);
-      setMapReady(true);
+      const m = map.current;
+      loadTaxiIcon(m).then(() => {
+        if (!map.current) return;
+        m.addControl(new mapboxgl.NavigationControl(), 'top-left');
+        m.on('zoom', () => { if (map.current) updateVisualizationMode(map.current.getZoom()); });
+        updateVisualizationMode(m.getZoom());
+        setLoading(false);
+        setMapReady(true);
+      });
     });
     const container = mapContainer.current;
     const ro = new ResizeObserver(() => { map.current?.resize(); });
