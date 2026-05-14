@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { SendHorizontal, Loader2, MapPin } from 'lucide-react';
+import { SendHorizontal, Loader2, MapPin, X, Car, Camera } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatResponse, TaxiArtifactData, CameraArtifactData } from '@/types/api';
@@ -26,11 +26,18 @@ const QUICK_SUGGESTIONS = [
   'Taxis near Orchard Road',
 ];
 
+function getLoadingMessage(query: string): string {
+  const q = query.toLowerCase();
+  if (q.includes('taxi')) return 'Fetching taxi data…';
+  if (q.includes('camera') || q.includes('cctv')) return 'Loading camera feeds…';
+  if (q.includes('traffic') || q.includes('jam') || q.includes('congestion') || q.includes('cte') || q.includes('expressway')) return 'Checking traffic conditions…';
+  return 'Searching…';
+}
+
 export default function ChatPanel({
   onDataReceived,
   backendUrl = 'http://localhost:8000/api/v1/chat',
 }: ChatPanelProps) {
-  // 1. State
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -41,34 +48,38 @@ export default function ChatPanel({
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Searching…');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  // 2. Side effects
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 3. Event handlers
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const sendMessage = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: trimmed,
       timestamp: new Date(),
     };
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
+    setLoadingMessage(getLoadingMessage(trimmed));
+
+    abortControllerRef.current = new AbortController();
 
     try {
       const response = await fetch(backendUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage.content }),
+        body: JSON.stringify({ message: trimmed }),
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -86,6 +97,7 @@ export default function ChatPanel({
       setMessages(prev => [...prev, assistantMessage]);
       onDataReceived(data);
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -95,14 +107,19 @@ export default function ChatPanel({
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    setInput(suggestion);
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    sendMessage(input);
   };
 
-  // 4. Render UI
+  const handleCancel = () => {
+    abortControllerRef.current?.abort();
+  };
+
   const renderMessageBadge = (message: Message) => {
     const artifacts = message.data?.artifacts ?? [];
     if (artifacts.length === 0) return null;
@@ -111,18 +128,21 @@ export default function ChatPanel({
       if (artifact.type === 'taxi_data') {
         const raw = (artifact.data as TaxiArtifactData).raw;
         if (raw?.type === 'spatial_query') return [
-          <span key={i} className="text-xs text-slate-500">
+          <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-full text-xs font-medium">
+            <Car className="w-3 h-3" />
             {raw.taxi_count} taxis · {raw.context?.zone_name ?? raw.context?.type ?? 'area'}
           </span>,
         ];
         if (raw?.type === 'timeline') return [
-          <span key={i} className="text-xs text-slate-500">
+          <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full text-xs font-medium">
+            <Car className="w-3 h-3" />
             {raw.snapshots.length} snapshots · {raw.context?.zone_name ?? raw.context?.type ?? 'area'}
           </span>,
         ];
       }
       if (artifact.type === 'traffic_cameras') return [
-        <span key={i} className="text-xs text-slate-500">
+        <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-xs font-medium">
+          <Camera className="w-3 h-3" />
           {(artifact.data as CameraArtifactData).cameras?.length ?? 0} cameras
         </span>,
       ];
@@ -131,7 +151,7 @@ export default function ChatPanel({
 
     if (badges.length === 0) return null;
     return (
-      <div className="mt-2 pt-2 border-t border-slate-200 flex flex-wrap gap-x-3 gap-y-1">
+      <div className="mt-2 pt-2 border-t border-slate-200 flex flex-wrap gap-1.5">
         {badges}
       </div>
     );
@@ -180,9 +200,16 @@ export default function ChatPanel({
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-4 py-3">
-              <div className="flex items-center space-x-2">
-                <Loader2 className="w-4 h-4 animate-spin text-slate-500" />
-                <span className="text-sm text-slate-500">Thinking...</span>
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-slate-500 flex-shrink-0" />
+                <span className="text-sm text-slate-500">{loadingMessage}</span>
+                <button
+                  onClick={handleCancel}
+                  className="ml-1 p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-200 transition-colors"
+                  aria-label="Cancel request"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           </div>
@@ -212,14 +239,14 @@ export default function ChatPanel({
           </button>
         </form>
 
-        {/* Quick suggestions */}
-        {messages.length === 1 && (
+        {/* Quick suggestions — always visible when input is empty and not loading */}
+        {!input.trim() && !isLoading && (
           <div className="mt-3 flex flex-wrap gap-2">
             {QUICK_SUGGESTIONS.map((suggestion) => (
               <button
                 key={suggestion}
-                onClick={() => handleSuggestionClick(suggestion)}
-                className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                onClick={() => sendMessage(suggestion)}
+                className="px-3 py-1.5 text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200 border border-transparent text-slate-700 rounded-lg transition-colors"
               >
                 {suggestion}
               </button>

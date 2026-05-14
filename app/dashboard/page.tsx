@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import { MapPin } from 'lucide-react';
+import { MapPin, ArrowLeft } from 'lucide-react';
 import ChatPanel from '@/components/ChatPanel';
 import GeoHeatmapMap from '@/components/GeoHeatmapMap';
 import CameraMap from '@/components/camera/CameraMap';
@@ -270,15 +270,33 @@ export default function DashboardPage() {
       {/* Draggable Divider */}
       <div
         onMouseDown={handleDividerMouseDown}
-        className="w-1 flex-shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize transition-colors z-20"
-      />
+        className="relative w-1 flex-shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize transition-colors z-20 group"
+      >
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-10 bg-slate-300 group-hover:bg-blue-400 rounded-full flex flex-col items-center justify-center gap-1 transition-colors pointer-events-none">
+          <div className="w-px h-3 bg-white/70 rounded-full" />
+          <div className="w-px h-3 bg-white/70 rounded-full" />
+        </div>
+      </div>
 
       {/* Right Panel — Map */}
       <div className="flex-1 relative overflow-hidden">
         {!hasLayers ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 select-none">
-            <MapPin className="w-12 h-12 opacity-30" />
-            <p className="text-sm">Ask a question to see data on the map</p>
+          <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-5 select-none px-8">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
+              <MapPin className="w-8 h-8 text-slate-300" />
+            </div>
+            <div className="text-center space-y-1">
+              <p className="text-base font-medium text-slate-500">Your map is ready</p>
+              <p className="text-sm text-slate-400">Ask a question on the left to see live data appear here</p>
+            </div>
+            <div className="flex flex-col gap-2 text-xs text-slate-400 w-full max-w-xs">
+              {['How many taxis in Orchard?', 'Is CTE congested right now?', 'Show cameras near Bugis'].map(ex => (
+                <div key={ex} className="flex items-center gap-2 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  <ArrowLeft className="w-3.5 h-3.5 flex-shrink-0 text-blue-300" />
+                  <span>{ex}</span>
+                </div>
+              ))}
+            </div>
           </div>
         ) : hasCameraLayers && !hasTaxiLayers ? (
           renderCameraPanel()

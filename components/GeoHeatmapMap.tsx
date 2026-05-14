@@ -471,19 +471,20 @@ export default function GeoHeatmapMap({
       `;
       el.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="${iconSize}" height="${iconSize}" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>`;
 
-      const popup = new mapboxgl.Popup({ offset: 22, closeButton: false }).setHTML(`
+      const popup = new mapboxgl.Popup({ offset: 22, closeButton: false, focusAfterOpen: false }).setHTML(`
         <div style="font-family:sans-serif;padding:4px 2px">
           <p style="font-weight:600;margin:0 0 4px;font-size:12px">${camera.locationName}</p>
-          ${camera.latestImage ? `<img src="${camera.latestImage}" style="width:150px;border-radius:4px;margin-bottom:4px" />` : ''}
-          <p style="margin:0;font-size:11px;color:#888;text-transform:capitalize">${camera.analysis?.congestion ?? 'No data'}</p>
+          ${camera.latestImage ? `<img src="${camera.latestImage}" style="width:160px;border-radius:6px;margin-bottom:4px;display:block" />` : ''}
+          <p style="margin:0;font-size:11px;color:#888;text-transform:capitalize">${camera.analysis?.congestion ?? 'No data'} · click to expand</p>
         </div>
       `);
 
       const marker = new mapboxgl.Marker({ element: el })
         .setLngLat([camera.longitude, camera.latitude])
-        .setPopup(popup)
         .addTo(m);
 
+      el.addEventListener('mouseenter', () => popup.setLngLat([camera.longitude, camera.latitude]).addTo(m));
+      el.addEventListener('mouseleave', () => popup.remove());
       el.addEventListener('click', () => onCameraClickRef.current?.(camera));
       cameraMarkersRef.current.push(marker);
     });
