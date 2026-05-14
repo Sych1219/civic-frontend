@@ -46,9 +46,35 @@ export default function DashboardPage() {
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
   const [zoneGeometries, setZoneGeometries] = useState<Record<string, ZoneGeometryData>>({});
   const [selectedCamera, setSelectedCamera] = useState<CameraItem>();
+  const [leftWidth, setLeftWidth] = useState(400);
   const layerCounter = useRef(0);
   const layerHashesRef = useRef<Map<string, string>>(new Map());
   const layerKeysRef = useRef<Map<string, string>>(new Map());
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = leftWidth;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = ev.clientX - dragStartX.current;
+      const next = Math.max(260, Math.min(window.innerWidth - 320, dragStartWidth.current + delta));
+      setLeftWidth(next);
+    };
+
+    const onMouseUp = () => {
+      isDragging.current = false;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [leftWidth]);
 
   // 2. Side effects (data fetching)
   // Zone geometry is fetched reactively inside handleDataReceived when a taxi
@@ -234,12 +260,18 @@ export default function DashboardPage() {
   return (
     <main className="flex h-screen w-screen overflow-hidden bg-slate-100">
       {/* Left Panel — Chat */}
-      <div className="w-[400px] flex-shrink-0 border-r border-slate-200 shadow-lg">
+      <div className="flex-shrink-0 border-r border-slate-200 shadow-lg" style={{ width: leftWidth }}>
         <ChatPanel
           onDataReceived={handleDataReceived}
           backendUrl={BACKEND_URL}
         />
       </div>
+
+      {/* Draggable Divider */}
+      <div
+        onMouseDown={handleDividerMouseDown}
+        className="w-1 flex-shrink-0 bg-slate-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize transition-colors z-20"
+      />
 
       {/* Right Panel — Map */}
       <div className="flex-1 relative overflow-hidden">
