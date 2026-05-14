@@ -10,7 +10,7 @@ import CameraDetail from '@/components/camera/CameraDetail';
 import AlertsPanel from '@/components/camera/AlertsPanel';
 import type { ChatResponse, ZoneGeometryData, CameraArtifactData } from '@/types/api';
 import { getTaxiData } from '@/types/api';
-import type { CameraItem } from '@/types/camera';
+import { CONGESTION_LABEL, type CameraItem } from '@/types/camera';
 
 const JAVA_BACKEND_URL = process.env.NEXT_PUBLIC_JAVA_BACKEND_URL || 'http://localhost:8080/api/v1';
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000/api/v1/chat';
@@ -342,8 +342,8 @@ export default function DashboardPage() {
                       )}
                       <div className="min-w-0">
                         <p className="text-xs font-medium text-slate-200 truncate">{cam.locationName}</p>
-                        <p className="text-xs text-slate-500 capitalize">
-                          {cam.analysis?.congestion?.replace('_', ' ') ?? 'No data'}
+                        <p className="text-xs text-slate-500">
+                          {cam.analysis ? CONGESTION_LABEL[cam.analysis.congestion] : 'No data'}
                         </p>
                       </div>
                     </button>

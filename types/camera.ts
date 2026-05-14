@@ -6,6 +6,14 @@ export type CameraViewType = 'camera_map' | 'corridor' | 'camera_detail' | 'snap
 
 export type CongestionLevel = 'free_flow' | 'light' | 'moderate' | 'heavy' | 'standstill';
 
+export const CONGESTION_LABEL: Record<CongestionLevel, string> = {
+  free_flow: 'Free Flow',
+  light: 'Light Congestion',
+  moderate: 'Moderate Congestion',
+  heavy: 'Heavy Congestion',
+  standstill: 'Standstill',
+};
+
 export type VehicleDensity = 'sparse' | 'light' | 'moderate' | 'dense' | 'packed';
 
 export type IncidentType = 'none' | 'stalled_vehicle' | 'accident' | 'possible_incident' | 'roadwork' | 'flooding';

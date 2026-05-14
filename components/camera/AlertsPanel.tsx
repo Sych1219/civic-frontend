@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertTriangle, ChevronRight } from 'lucide-react';
-import type { CameraItem } from '@/types/camera';
+import { CONGESTION_LABEL, type CameraItem } from '@/types/camera';
 
 const CONGESTION_COLORS: Record<string, string> = {
   free_flow:  '#22c55e',
@@ -69,8 +69,8 @@ export default function AlertsPanel({ cameras, onCameraClick }: AlertsPanelProps
                       className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ background: congestionColor }}
                     />
-                    <span className="text-slate-400 text-xs capitalize">
-                      {camera.analysis!.congestion.replace('_', ' ')}
+                    <span className="text-slate-400 text-xs">
+                      {CONGESTION_LABEL[camera.analysis!.congestion]}
                     </span>
                   </div>
                 </div>

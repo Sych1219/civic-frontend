@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import type { CameraItem } from '@/types/camera';
+import { CONGESTION_LABEL, type CameraItem } from '@/types/camera';
 
 interface CameraDetailProps {
   camera: CameraItem;
@@ -89,8 +89,8 @@ export default function CameraDetail({
                 className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                 style={{ background: congestionColor }}
               />
-              <span className="text-sm font-medium text-white capitalize">
-                {camera.analysis.congestion.replace('_', ' ')}
+              <span className="text-sm font-medium text-white">
+                {CONGESTION_LABEL[camera.analysis.congestion]}
               </span>
               <span className="text-slate-500 text-xs">·</span>
               <span className="text-slate-400 text-xs capitalize">
