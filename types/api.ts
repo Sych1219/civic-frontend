@@ -33,7 +33,8 @@ export interface SpatialQueryData {
   taxi_count: number;
   snapshot_time: string;
   context: TaxiQueryContext | null;
-  locations: GeoJSON.FeatureCollection;
+  locations: GeoJSON.FeatureCollection | null;
+  locations_ref?: string | null;
 }
 
 export interface TimelineData {
@@ -58,6 +59,7 @@ export interface ZoneGeometryData {
 
 export interface TaxiArtifactData {
   raw: SpatialQueryData | TimelineData | ZoneGeometryData | null;
+  locations?: Record<string, GeoJSON.FeatureCollection>;
 }
 
 export interface CameraArtifactData {
@@ -85,8 +87,14 @@ export interface ChatResponse {
 
 export function getTaxiData(r: ChatResponse): SpatialQueryData | TimelineData | ZoneGeometryData | null {
   const a = r.artifacts?.[0];
-  if (a?.type === 'taxi_data') return (a.data as TaxiArtifactData).raw;
-  return null;
+  if (a?.type !== 'taxi_data') return null;
+  const artifactData = a.data as TaxiArtifactData;
+  const raw = artifactData.raw;
+  if (raw?.type === 'spatial_query' && raw.locations == null && raw.locations_ref) {
+    const resolved = artifactData.locations?.[raw.locations_ref];
+    if (resolved) return { ...raw, locations: resolved };
+  }
+  return raw;
 }
 
 // ── Map visualisation modes (used by GeoHeatmapMap) ─────────────────────────

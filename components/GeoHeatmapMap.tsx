@@ -388,7 +388,9 @@ export default function GeoHeatmapMap({
       if (addedLayerTypes.current.has(layerId) || !taxiData) continue;
       const type = taxiData.type;
       if (type === 'spatial_query') {
-        addSpatialMbLayer(m, layerId, (taxiData as SpatialQueryData).locations);
+        const locs = (taxiData as SpatialQueryData).locations;
+        if (!locs) continue;
+        addSpatialMbLayer(m, layerId, locs);
         addedLayerTypes.current.set(layerId, 'spatial_query');
       } else if (type === 'timeline') {
         const tl = taxiData as TimelineData;
