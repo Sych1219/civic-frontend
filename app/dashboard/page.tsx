@@ -4,6 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { MapPin, ArrowLeft } from 'lucide-react';
 import ChatPanel from '@/components/ChatPanel';
 import GeoHeatmapMap from '@/components/GeoHeatmapMap';
+import LayerToggle from '@/components/LayerToggle';
 import CameraMap from '@/components/camera/CameraMap';
 import CorridorMap from '@/components/camera/CorridorMap';
 import CameraDetail from '@/components/camera/CameraDetail';
@@ -299,7 +300,15 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : hasCameraLayers && !hasTaxiLayers ? (
-          renderCameraPanel()
+          <>
+            {renderCameraPanel()}
+            <LayerToggle
+              layers={layers}
+              visibility={visibility}
+              onToggle={handleToggle}
+              onRemove={handleRemove}
+            />
+          </>
         ) : hasTaxiLayers ? (
           <div className="flex h-full">
             <div className="flex-1 relative overflow-hidden">

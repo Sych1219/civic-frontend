@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { CONGESTION_LABEL, type CameraItem } from '@/types/camera';
@@ -32,6 +32,9 @@ export default function CameraDetail({
 }: CameraDetailProps) {
   const congestionColor = CONGESTION_COLORS[camera.analysis?.congestion ?? ''] ?? '#6b7280';
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragOffset = useRef<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!lightboxOpen) return;
@@ -40,11 +43,49 @@ export default function CameraDetail({
     return () => window.removeEventListener('keydown', onKey);
   }, [lightboxOpen]);
 
+  const handleDragStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const panel = panelRef.current;
+    if (!panel || !panel.offsetParent) return;
+
+    const rect = panel.getBoundingClientRect();
+    const parentRect = panel.offsetParent.getBoundingClientRect();
+
+    const startX = rect.left - parentRect.left;
+    const startY = rect.top - parentRect.top;
+    setPosition({ x: startX, y: startY });
+
+    dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragOffset.current || !panel.offsetParent) return;
+      const pr = panel.offsetParent.getBoundingClientRect();
+      setPosition({
+        x: ev.clientX - pr.left - dragOffset.current.x,
+        y: ev.clientY - pr.top - dragOffset.current.y,
+      });
+    };
+    const onMouseUp = () => {
+      dragOffset.current = null;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
   return (
     <>
-    <div className="absolute top-4 right-4 bottom-4 w-72 bg-slate-900/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden flex flex-col z-20 border border-slate-700">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0">
+    <div
+      ref={panelRef}
+      className="absolute w-72 max-h-[calc(100%-2rem)] bg-slate-900/95 backdrop-blur-sm rounded-xl shadow-2xl overflow-hidden flex flex-col z-20 border border-slate-700"
+      style={position ? { left: position.x, top: position.y, right: 'auto' } : { top: '1rem', right: '1rem' }}
+    >
+      {/* Header — drag handle */}
+      <div
+        className="flex items-center justify-between px-4 py-3 border-b border-slate-700 flex-shrink-0 cursor-grab active:cursor-grabbing select-none"
+        onMouseDown={handleDragStart}
+      >
         <div className="flex-1 min-w-0">
           <h3 className="text-white font-semibold text-sm truncate">{camera.locationName}</h3>
           <p className="text-slate-400 text-xs mt-0.5">
@@ -100,16 +141,22 @@ export default function CameraDetail({
 
             {/* Details grid */}
             <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-              <div>
-                <span className="text-slate-500">Weather</span>
-                <p className="text-slate-300 capitalize mt-0.5">
-                  {camera.analysis.weather.replace('_', ' ')}
-                </p>
-              </div>
-              <div>
-                <span className="text-slate-500">Road surface</span>
-                <p className="text-slate-300 capitalize mt-0.5">{camera.analysis.road_surface}</p>
-              </div>
+              {camera.analysis.weather && (
+                <div>
+                  <span className="text-slate-500">Weather</span>
+                  <p className="text-slate-300 capitalize mt-0.5">
+                    {camera.analysis.weather.replaceAll('_', ' ')}
+                  </p>
+                </div>
+              )}
+              {camera.analysis.road_surface && (
+                <div>
+                  <span className="text-slate-500">Road surface</span>
+                  <p className="text-slate-300 capitalize mt-0.5">
+                    {camera.analysis.road_surface.replaceAll('_', ' ')}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Incident alert */}
