@@ -76,12 +76,25 @@ export interface Artifact {
 
 export interface ChatRequest {
   message: string;
+  session_id?: string;
+  officer_id?: string;
 }
 
 export interface ChatResponse {
   answer: string;
   artifacts: Artifact[];
 }
+
+// ── SSE event types ───────────────────────────────────────────────────────────
+
+export type SSEEvent =
+  | { type: 'tool_start'; tool: string; input: Record<string, unknown> }
+  | { type: 'tool_end'; tool: string; output: string }
+  | { type: 'token'; content: string }
+  | { type: 'new_response' }
+  | { type: 'done'; session_id: string; artifacts: Array<{ type: string }>; answer: string }
+  | { type: 'title'; session_id: string; title: string }
+  | { type: 'error'; error: string };
 
 // ── Helper — extract taxi data from a ChatResponse ───────────────────────────
 

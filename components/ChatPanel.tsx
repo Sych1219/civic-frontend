@@ -1,10 +1,16 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { SendHorizontal, Loader2, MapPin, X, Car, Camera } from 'lucide-react';
+import { SendHorizontal, Loader2, MapPin, X, Car, Camera, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatResponse, TaxiArtifactData, CameraArtifactData } from '@/types/api';
+import type { ChatResponse, TaxiArtifactData, CameraArtifactData, SSEEvent } from '@/types/api';
+
+interface ThinkingStep {
+  tool: string;
+  status: 'running' | 'done';
+  output?: string;
+}
 
 interface Message {
   id: string;
@@ -12,11 +18,14 @@ interface Message {
   content: string;
   timestamp: Date;
   data?: ChatResponse;
+  thinkingSteps?: ThinkingStep[];
+  sessionTitle?: string;
 }
 
 interface ChatPanelProps {
   onDataReceived: (data: ChatResponse) => void;
   backendUrl?: string;
+  sessionId?: string;
 }
 
 const QUICK_SUGGESTIONS = [
@@ -37,6 +46,7 @@ function getLoadingMessage(query: string): string {
 export default function ChatPanel({
   onDataReceived,
   backendUrl = 'http://localhost:8000/api/v1/chat',
+  sessionId = 'default',
 }: ChatPanelProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -67,7 +77,16 @@ export default function ChatPanel({
       timestamp: new Date(),
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const assistantId = (Date.now() + 1).toString();
+    const assistantPlaceholder: Message = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      thinkingSteps: [],
+    };
+
+    setMessages(prev => [...prev, userMessage, assistantPlaceholder]);
     setInput('');
     setIsLoading(true);
     setLoadingMessage(getLoadingMessage(trimmed));
@@ -78,33 +97,100 @@ export default function ChatPanel({
       const response = await fetch(backendUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: trimmed }),
+        body: JSON.stringify({ message: trimmed, session_id: sessionId }),
         signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-      const data: ChatResponse = await response.json();
+      const contentType = response.headers.get('content-type') ?? '';
 
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.answer,
-        timestamp: new Date(),
-        data,
-      };
+      if (contentType.includes('text/event-stream')) {
+        // SSE streaming mode
+        const reader = response.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let collectedAnswer = '';
+        let collectedArtifacts: ChatResponse['artifacts'] = [];
+        let activeThinkingStep: ThinkingStep | null = null;
 
-      setMessages(prev => [...prev, assistantMessage]);
-      onDataReceived(data);
+        const updateAssistant = (updater: (msg: Message) => Message) => {
+          setMessages(prev => prev.map(m => m.id === assistantId ? updater(m) : m));
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            let event: SSEEvent;
+            try {
+              event = JSON.parse(line.slice(6));
+            } catch {
+              continue;
+            }
+
+            if (event.type === 'tool_start') {
+              activeThinkingStep = { tool: event.tool, status: 'running' };
+              updateAssistant(m => ({
+                ...m,
+                thinkingSteps: [...(m.thinkingSteps ?? []), activeThinkingStep!],
+              }));
+            } else if (event.type === 'tool_end') {
+              updateAssistant(m => ({
+                ...m,
+                thinkingSteps: (m.thinkingSteps ?? []).map(s =>
+                  s.tool === event.tool && s.status === 'running'
+                    ? { ...s, status: 'done', output: event.output }
+                    : s
+                ),
+              }));
+              activeThinkingStep = null;
+            } else if (event.type === 'token') {
+              collectedAnswer += event.content;
+              updateAssistant(m => ({ ...m, content: collectedAnswer }));
+            } else if (event.type === 'done') {
+              collectedAnswer = event.answer;
+              // Reconstruct ChatResponse for map / badge rendering
+              const chatResponse: ChatResponse = {
+                answer: event.answer,
+                artifacts: collectedArtifacts,
+              };
+              updateAssistant(m => ({ ...m, content: collectedAnswer, data: chatResponse }));
+              onDataReceived(chatResponse);
+            } else if (event.type === 'title') {
+              updateAssistant(m => ({ ...m, sessionTitle: event.title }));
+            } else if (event.type === 'error') {
+              updateAssistant(m => ({
+                ...m,
+                content: `Sorry, something went wrong: ${event.error}`,
+              }));
+            }
+          }
+        }
+      } else {
+        // Fallback: plain JSON response
+        const data: ChatResponse = await response.json();
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId ? { ...m, content: data.answer, data } : m
+        ));
+        onDataReceived(data);
+      }
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') return;
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Sorry, I couldn't fetch the data. ${error instanceof Error ? error.message : 'Please try again.'}`,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      if (error instanceof Error && error.name === 'AbortError') {
+        setMessages(prev => prev.filter(m => m.id !== assistantId));
+        return;
+      }
+      setMessages(prev => prev.map(m =>
+        m.id === assistantId
+          ? { ...m, content: `Sorry, I couldn't fetch the data. ${error instanceof Error ? error.message : 'Please try again.'}` }
+          : m
+      ));
     } finally {
       setIsLoading(false);
       abortControllerRef.current = null;
@@ -118,6 +204,22 @@ export default function ChatPanel({
 
   const handleCancel = () => {
     abortControllerRef.current?.abort();
+  };
+
+  const renderThinkingSteps = (steps: ThinkingStep[]) => {
+    if (steps.length === 0) return null;
+    return (
+      <div className="mb-2 space-y-1">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-center gap-1.5 text-xs text-slate-500">
+            <Wrench className="w-3 h-3 flex-shrink-0" />
+            <span className={step.status === 'running' ? 'animate-pulse' : ''}>
+              {step.status === 'running' ? `Calling ${step.tool}…` : `${step.tool} ✓`}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
   };
 
   const renderMessageBadge = (message: Message) => {
@@ -186,8 +288,13 @@ export default function ChatPanel({
                   : 'bg-slate-100 text-slate-900 rounded-bl-sm'
               }`}
             >
+              {message.role === 'assistant' && renderThinkingSteps(message.thinkingSteps ?? [])}
               <div className="text-sm leading-relaxed prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5 prose-hr:my-2 prose-headings:my-1.5 prose-strong:font-semibold [&_ul]:list-disc [&_ol]:list-decimal [&_ul]:pl-4 [&_ol]:pl-4">
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                {message.content ? (
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+                ) : message.role === 'assistant' && isLoading ? (
+                  <span className="text-slate-400 animate-pulse">Thinking…</span>
+                ) : null}
               </div>
               <p suppressHydrationWarning className={`text-xs mt-2 ${message.role === 'user' ? 'text-blue-100' : 'text-slate-500'}`}>
                 {message.timestamp.toLocaleTimeString()}
@@ -197,7 +304,7 @@ export default function ChatPanel({
           </div>
         ))}
 
-        {isLoading && (
+        {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
           <div className="flex justify-start">
             <div className="bg-slate-100 rounded-2xl rounded-bl-sm px-4 py-3">
               <div className="flex items-center gap-2">
@@ -239,7 +346,6 @@ export default function ChatPanel({
           </button>
         </form>
 
-        {/* Quick suggestions — always visible when input is empty and not loading */}
         {!input.trim() && !isLoading && (
           <div className="mt-3 flex flex-wrap gap-2">
             {QUICK_SUGGESTIONS.map((suggestion) => (
