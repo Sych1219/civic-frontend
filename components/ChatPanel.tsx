@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { SendHorizontal, Loader2, MapPin, X, Car, Camera, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatResponse, TaxiArtifactData, CameraArtifactData, SSEEvent } from '@/types/api';
+import type { Artifact, ChatResponse, TaxiArtifactData, CameraArtifactData, SSEEvent } from '@/types/api';
 
 interface ThinkingStep {
   tool: string;
@@ -156,7 +156,19 @@ export default function ChatPanel({
               updateAssistant(m => ({ ...m, content: collectedAnswer }));
             } else if (event.type === 'done') {
               collectedAnswer = event.answer;
-              // Reconstruct ChatResponse for map / badge rendering
+              // Lazy-load full artifact data by artifact_id
+              const sessionsBase = new URL(backendUrl).origin + '/api/sessions';
+              const fetched = await Promise.all(
+                event.artifacts
+                  .filter(a => a.artifact_id)
+                  .map(a =>
+                    fetch(`${sessionsBase}/${sessionId}/artifacts/${a.artifact_id}`)
+                      .then(r => r.ok ? r.json() : null)
+                      .then(data => data ? { type: a.type as Artifact['type'], data } : null)
+                      .catch(() => null)
+                  )
+              );
+              collectedArtifacts = fetched.filter((a): a is Artifact => a !== null);
               const chatResponse: ChatResponse = {
                 answer: event.answer,
                 artifacts: collectedArtifacts,

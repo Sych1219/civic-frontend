@@ -92,7 +92,7 @@ export type SSEEvent =
   | { type: 'tool_end'; tool: string; output: string }
   | { type: 'token'; content: string }
   | { type: 'new_response' }
-  | { type: 'done'; session_id: string; artifacts: Array<{ type: string }>; answer: string }
+  | { type: 'done'; session_id: string; artifacts: Array<{ type: string; artifact_id?: string }>; answer: string }
   | { type: 'title'; session_id: string; title: string }
   | { type: 'error'; error: string };
 
