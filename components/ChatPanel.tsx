@@ -52,7 +52,7 @@ export default function ChatPanel({
     {
       id: '1',
       role: 'assistant',
-      content: 'Hello! Ask me about taxi availability or traffic conditions anywhere in Singapore.',
+      content: 'Hello! I can help you query Singapore\'s public data — taxi availability, traffic cameras, road conditions, and more. What would you like to know?',
       timestamp: new Date(),
     },
   ]);
@@ -269,7 +269,7 @@ export default function ChatPanel({
           </div>
           <div>
             <h2 className="text-lg font-semibold text-slate-900">Civic Assistant</h2>
-            <p className="text-sm text-slate-500">Ask about taxis or traffic cameras</p>
+            <p className="text-sm text-slate-500">Singapore public APIs for officer decision support</p>
           </div>
         </div>
       </div>
@@ -333,7 +333,7 @@ export default function ChatPanel({
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about taxis or traffic cameras…"
+            placeholder="Ask about Singapore public data…"
             disabled={isLoading}
             className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           />
