@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
-import { CONGESTION_LABEL, type CameraItem } from '@/types/camera';
+import { CONGESTION_LABEL, getCongestionColor, type CameraItem } from '@/types/camera';
 
 interface CameraDetailProps {
   camera: CameraItem;
@@ -14,14 +14,6 @@ interface CameraDetailProps {
   onCameraClick?: (camera: CameraItem) => void;
 }
 
-const CONGESTION_COLORS: Record<string, string> = {
-  free_flow:  '#22c55e',
-  light:      '#eab308',
-  moderate:   '#f97316',
-  heavy:      '#ef4444',
-  standstill: '#7f1d1d',
-};
-
 export default function CameraDetail({
   camera,
   isHistorical,
@@ -30,7 +22,7 @@ export default function CameraDetail({
   onClose,
   onCameraClick,
 }: CameraDetailProps) {
-  const congestionColor = CONGESTION_COLORS[camera.analysis?.congestion ?? ''] ?? '#6b7280';
+  const congestionColor = getCongestionColor(camera.analysis?.congestion);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -199,7 +191,7 @@ export default function CameraDetail({
       </div>
     </div>
 
-    {lightboxOpen && camera.latestImage && createPortal(
+    {lightboxOpen && camera.latestImage && typeof document !== 'undefined' && createPortal(
       <div
         className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
         onClick={() => setLightboxOpen(false)}

@@ -1,15 +1,7 @@
 'use client';
 
 import { AlertTriangle, ChevronRight } from 'lucide-react';
-import { CONGESTION_LABEL, type CameraItem } from '@/types/camera';
-
-const CONGESTION_COLORS: Record<string, string> = {
-  free_flow:  '#22c55e',
-  light:      '#eab308',
-  moderate:   '#f97316',
-  heavy:      '#ef4444',
-  standstill: '#7f1d1d',
-};
+import { CONGESTION_LABEL, CONGESTION_COLORS, type CameraItem } from '@/types/camera';
 
 interface AlertsPanelProps {
   cameras: CameraItem[];

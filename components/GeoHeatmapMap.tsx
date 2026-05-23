@@ -7,19 +7,7 @@ import { Play, Pause } from 'lucide-react';
 import LayerToggle from './LayerToggle';
 import type { ChatResponse, SpatialQueryData, TimelineData, VisualizationMode, ZoneGeometryData } from '@/types/api';
 import { getTaxiData } from '@/types/api';
-import { CONGESTION_LABEL, type CameraItem, type CongestionLevel } from '@/types/camera';
-
-const CONGESTION_COLORS: Record<string, string> = {
-  free_flow:  '#22c55e',
-  light:      '#eab308',
-  moderate:   '#f97316',
-  heavy:      '#ef4444',
-  standstill: '#7f1d1d',
-};
-
-function congestionColor(level: string | undefined): string {
-  return CONGESTION_COLORS[level ?? ''] ?? '#6b7280';
-}
+import { CONGESTION_LABEL, getCongestionColor, type CameraItem, type CongestionLevel } from '@/types/camera';
 
 interface GeoHeatmapMapProps {
   mapboxToken: string;
@@ -454,7 +442,7 @@ export default function GeoHeatmapMap({
 
     (cameraItems ?? []).forEach(camera => {
       const isSelected = selectedCamera?.cameraId === camera.cameraId;
-      const color = congestionColor(camera.analysis?.congestion);
+      const color = getCongestionColor(camera.analysis?.congestion);
       const size = isSelected ? 36 : 28;
       const iconSize = Math.round(size * 0.55);
 

@@ -14,6 +14,18 @@ export const CONGESTION_LABEL: Record<CongestionLevel, string> = {
   standstill: 'Standstill',
 };
 
+export const CONGESTION_COLORS: Record<CongestionLevel, string> = {
+  free_flow:  '#22c55e',
+  light:      '#eab308',
+  moderate:   '#f97316',
+  heavy:      '#ef4444',
+  standstill: '#7f1d1d',
+};
+
+export function getCongestionColor(level: string | undefined): string {
+  return CONGESTION_COLORS[level as CongestionLevel] ?? '#6b7280';
+}
+
 export type VehicleDensity = 'sparse' | 'light' | 'moderate' | 'dense' | 'packed';
 
 export type IncidentType = 'none' | 'stalled_vehicle' | 'accident' | 'possible_incident' | 'roadwork' | 'flooding';

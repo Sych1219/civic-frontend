@@ -54,11 +54,13 @@ export default function DashboardPage() {
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartWidth = useRef(0);
+  const leftWidthRef = useRef(leftWidth);
+  leftWidthRef.current = leftWidth;
 
   const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true;
     dragStartX.current = e.clientX;
-    dragStartWidth.current = leftWidth;
+    dragStartWidth.current = leftWidthRef.current;
 
     const onMouseMove = (ev: MouseEvent) => {
       if (!isDragging.current) return;
@@ -75,7 +77,7 @@ export default function DashboardPage() {
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  }, [leftWidth]);
+  }, []);
 
   // 2. Side effects (data fetching)
   // Zone geometry is fetched reactively inside handleDataReceived when a taxi
