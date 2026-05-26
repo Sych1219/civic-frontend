@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { SendHorizontal, Loader2, MapPin, X, Car, Camera, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Artifact, ChatResponse, TaxiArtifactData, CameraArtifactData, SSEEvent } from '@/types/api';
+import type { Artifact, ChatResponse, TaxiArtifactData, CameraArtifactData, SSEEvent, RawMessagesPayload } from '@/types/api';
+import RawMessagesPanel from '@/components/chat/RawMessagesPanel';
 
 interface ThinkingStep {
   tool: string;
@@ -20,6 +21,7 @@ interface Message {
   data?: ChatResponse;
   thinkingSteps?: ThinkingStep[];
   sessionTitle?: string;
+  rawMessages?: RawMessagesPayload;
 }
 
 interface ChatPanelProps {
@@ -182,6 +184,16 @@ export default function ChatPanel({
                 ...m,
                 content: `Sorry, something went wrong: ${event.error}`,
               }));
+            } else if (event.type === 'llm_call') {
+              updateAssistant(m => ({
+                ...m,
+                rawMessages: {
+                  calls: [...(m.rawMessages?.calls ?? []), event.call],
+                  total_tokens: (m.rawMessages?.total_tokens ?? 0)
+                    + (event.call.input_tokens ?? 0) + (event.call.output_tokens ?? 0),
+                  generated_at: new Date().toISOString(),
+                },
+              }));
             }
           }
         }
@@ -312,6 +324,9 @@ export default function ChatPanel({
                 {message.timestamp.toLocaleTimeString()}
               </p>
               {renderMessageBadge(message)}
+              {message.role === 'assistant' && (
+                <RawMessagesPanel payload={message.rawMessages} messageId={message.id} />
+              )}
             </div>
           </div>
         ))}

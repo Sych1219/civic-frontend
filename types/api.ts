@@ -85,6 +85,39 @@ export interface ChatResponse {
   artifacts: Artifact[];
 }
 
+// ── Raw Messages types ────────────────────────────────────────────────────────
+
+export type RawMessageRole = 'system' | 'user' | 'assistant' | 'tool';
+
+export interface RawMessageBlock {
+  role: RawMessageRole;
+  content: string;
+  tool_name?: string;
+  tool_call_id?: string;
+  is_history?: boolean;
+  truncated?: boolean;
+}
+
+export interface RawLLMCall {
+  phase: 'planner' | 'agent' | 'synthesizer' | 'title';
+  agent?: string;
+  model: string;
+  temperature?: number;
+  duration_ms?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  messages: RawMessageBlock[];
+  output?: string;
+  output_structured?: unknown;
+  skipped_reason?: string;
+}
+
+export interface RawMessagesPayload {
+  calls: RawLLMCall[];
+  total_tokens?: number;
+  generated_at: string;
+}
+
 // ── SSE event types ───────────────────────────────────────────────────────────
 
 export type SSEEvent =
@@ -94,7 +127,8 @@ export type SSEEvent =
   | { type: 'new_response' }
   | { type: 'done'; session_id: string; artifacts: Array<{ type: string; artifact_id?: string }>; answer: string }
   | { type: 'title'; session_id: string; title: string }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  | { type: 'llm_call'; call: RawLLMCall };
 
 // ── Helper — extract taxi data from a ChatResponse ───────────────────────────
 
