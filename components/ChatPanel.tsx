@@ -4,8 +4,9 @@ import { useState, useRef, useEffect } from 'react';
 import { SendHorizontal, Loader2, MapPin, X, Car, Camera, Wrench } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Artifact, ChatResponse, TaxiArtifactData, CameraArtifactData, SSEEvent, RawMessagesPayload } from '@/types/api';
+import type { Artifact, ChatResponse, TaxiArtifactData, CameraArtifactData, SSEEvent, RawMessagesPayload, MessageFeedback as MessageFeedbackData } from '@/types/api';
 import RawMessagesPanel from '@/components/chat/RawMessagesPanel';
+import MessageFeedback from '@/components/chat/MessageFeedback';
 
 interface ThinkingStep {
   tool: string;
@@ -22,6 +23,8 @@ interface Message {
   thinkingSteps?: ThinkingStep[];
   sessionTitle?: string;
   rawMessages?: RawMessagesPayload;
+  msgIndex?: number;
+  feedback?: MessageFeedbackData | null;
 }
 
 interface ChatPanelProps {
@@ -175,7 +178,8 @@ export default function ChatPanel({
                 answer: event.answer,
                 artifacts: collectedArtifacts,
               };
-              updateAssistant(m => ({ ...m, content: collectedAnswer, data: chatResponse }));
+              const msgIndex = event.msg_index;
+              updateAssistant(m => ({ ...m, content: collectedAnswer, data: chatResponse, msgIndex }));
               onDataReceived(chatResponse);
             } else if (event.type === 'title') {
               updateAssistant(m => ({ ...m, sessionTitle: event.title }));
@@ -324,6 +328,14 @@ export default function ChatPanel({
                 {message.timestamp.toLocaleTimeString()}
               </p>
               {renderMessageBadge(message)}
+              {message.role === 'assistant' && message.msgIndex !== undefined && (
+                <MessageFeedback
+                  sessionId={sessionId}
+                  msgIndex={message.msgIndex}
+                  backendBase={new URL(backendUrl).origin + '/api/sessions'}
+                  initialFeedback={message.feedback}
+                />
+              )}
               {message.role === 'assistant' && (
                 <RawMessagesPanel payload={message.rawMessages} messageId={message.id} />
               )}

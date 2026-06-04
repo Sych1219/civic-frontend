@@ -118,6 +118,24 @@ export interface RawMessagesPayload {
   generated_at: string;
 }
 
+// ── Feedback types ────────────────────────────────────────────────────────────
+
+export interface MessageFeedback {
+  rating: 'up' | 'down';
+  comment: string | null;
+}
+
+export interface FeedbackRequest {
+  rating: 'up' | 'down';
+  comment?: string | null;
+}
+
+export interface FeedbackResponse {
+  ok: boolean;
+  hint_generated: boolean;
+  experience_written: string | null;
+}
+
 // ── SSE event types ───────────────────────────────────────────────────────────
 
 export type SSEEvent =
@@ -125,7 +143,7 @@ export type SSEEvent =
   | { type: 'tool_end'; tool: string; output: string }
   | { type: 'token'; content: string }
   | { type: 'new_response' }
-  | { type: 'done'; session_id: string; artifacts: Array<{ type: string; artifact_id?: string }>; answer: string }
+  | { type: 'done'; session_id: string; msg_index: number; artifacts: Array<{ type: string; artifact_id?: string }>; answer: string }
   | { type: 'title'; session_id: string; title: string }
   | { type: 'error'; error: string }
   | { type: 'llm_call'; call: RawLLMCall };
